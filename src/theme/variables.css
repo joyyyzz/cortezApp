@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Pwede mong iwanan itong blanko muna o lagyan ng Ionic defaults sa huli */
+}
+
+/* For information on how to create your own theme, please refer to:
+http://ionicframework.com/docs/theming/ */

@@ -1,0 +1,36 @@
+.ta-main {
+  background: #ffffff;
+  min-height: 100vh;
+  padding: 2rem;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.ta-card-section {
+  background: #fff;
+  border-radius: 16px;
+  border: 1.5px solid #bfdbfe;
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+}
+
+.ta-card-header {
+  border-bottom: 1.5px solid #bfdbfe;
+  padding: 1rem 1.25rem;
+}
+
+.ta-section-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 18px;
+  color: #1a56db;
+  border-left: 4px solid #1a56db;
+  padding-left: 12px;
+}
+
+.ta-badge {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1a56db;
+  border-radius: 20px;
+  padding: 3px 12px;
+  font-size: 12px;
+}

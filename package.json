@@ -63,6 +63,7 @@
   },
   "description": "An Ionic project",
   "optionalDependencies": {
-    "@rollup/rollup-win32-x64-msvc": "^4.60.4"
+    "@rollup/rollup-win32-x64-msvc": "^4.60.4",
+    "@rollup/rollup-linux-x64-gnu": "^4.60.4"
   }
 }

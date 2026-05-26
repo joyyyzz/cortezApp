@@ -29,7 +29,6 @@ const Login = () => {
           "X-Requested-With": "XMLHttpRequest",
           Accept: "application/json",
         },
-        credentials: "include",
         body: JSON.stringify(formData),
       });
 

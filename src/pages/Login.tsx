@@ -2,22 +2,21 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useIonRouter } from "@ionic/react";
 
-// ✅ I-define dito para madaling palitan kung mag-move ng server
 const BASE_URL = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php";
 
 const Login = () => {
   const router = useIonRouter();
-  const [formData, setFormData] = useState({ username: "", password: "" });
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-    setError(""); // clear error on type
-  };
+  const handleSubmit = async () => {
+    if (!username.trim() || !password.trim()) {
+      setError("Please enter username and password");
+      return;
+    }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
     setLoading(true);
     setError("");
 
@@ -29,27 +28,25 @@ const Login = () => {
           "X-Requested-With": "XMLHttpRequest",
           Accept: "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ username: username.trim(), password: password }),
       });
 
-      // ✅ Try to parse JSON even on 500 for better error messages
       const text = await response.text();
       let data: any = {};
       try {
         data = JSON.parse(text);
       } catch {
-        console.error("Non-JSON response:", text);
         setError("Server error. Check PHP logs.");
         return;
       }
 
       if (data.status === "success") {
-        const user_id  = data.user_id  ?? data.data?.user_id  ?? data.user?.user_id  ?? "";
-        const username = data.username ?? data.data?.username ?? data.user?.username ?? formData.username;
+        const user_id = data.user_id ?? data.data?.user_id ?? data.user?.user_id ?? "";
+        const uname = data.username ?? data.data?.username ?? data.user?.username ?? username;
 
-        localStorage.setItem("user_id",  String(user_id));
-        localStorage.setItem("username", username);
-        localStorage.setItem("role",     data.role ?? "");
+        localStorage.setItem("user_id", String(user_id));
+        localStorage.setItem("username", uname);
+        localStorage.setItem("role", data.role ?? "");
 
         if (data.role === "admin") {
           router.push("/dashboard");
@@ -60,8 +57,7 @@ const Login = () => {
         setError(data.message || "Invalid username or password");
       }
     } catch (err) {
-      console.error("Connection error:", err);
-      setError("Cannot connect to server. Check your internet connection.");
+      setError("Cannot connect to server: " + String(err));
     } finally {
       setLoading(false);
     }
@@ -71,20 +67,12 @@ const Login = () => {
     <div style={{ background: "linear-gradient(180deg, #4e73df 10%, #224abe 100%)", minHeight: "100vh" }}>
       <div style={{ display: "flex", justifyContent: "center", padding: "0 15px" }}>
         <div style={{ width: "100%", maxWidth: "960px" }}>
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: "0.35rem",
-              boxShadow: "0 1rem 3rem rgba(0,0,0,0.175)",
-              overflow: "hidden",
-              margin: "3rem 0",
-              display: "flex",
-            }}
-          >
-            {/* Left — empty white space */}
+          <div style={{
+            background: "#fff", borderRadius: "0.35rem",
+            boxShadow: "0 1rem 3rem rgba(0,0,0,0.175)",
+            overflow: "hidden", margin: "3rem 0", display: "flex",
+          }}>
             <div style={{ flex: "0 0 50%" }} />
-
-            {/* Right — form */}
             <div style={{ flex: "0 0 50%", padding: "2.5rem" }}>
               <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
                 <h1 style={{ fontSize: "1.25rem", fontWeight: 700, color: "#5a5c69", marginBottom: 0 }}>
@@ -92,7 +80,6 @@ const Login = () => {
                 </h1>
               </div>
 
-              {/* ✅ Error message display */}
               {error && (
                 <div style={{
                   background: "#fde8e8", color: "#c0392b",
@@ -103,57 +90,53 @@ const Login = () => {
                 </div>
               )}
 
-              <form onSubmit={handleSubmit}>
-                <div style={{ marginBottom: "1rem" }}>
-                  <input
-                    type="text"
-                    name="username"
-                    placeholder="Enter username..."
-                    value={formData.username}
-                    onChange={handleChange}
-                    disabled={loading}
-                    style={{
-                      display: "block", width: "100%",
-                      padding: "0.75rem 1.25rem", fontSize: "0.85rem",
-                      borderRadius: "10rem", border: "1px solid #d1d3e2",
-                      outline: "none", boxSizing: "border-box",
-                      backgroundColor: "#fff", color: "#6e707e",
-                    }}
-                  />
-                </div>
-                <div style={{ marginBottom: "1rem" }}>
-                  <input
-                    type="password"
-                    name="password"
-                    placeholder="Password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    disabled={loading}
-                    style={{
-                      display: "block", width: "100%",
-                      padding: "0.75rem 1.25rem", fontSize: "0.85rem",
-                      borderRadius: "10rem", border: "1px solid #d1d3e2",
-                      outline: "none", boxSizing: "border-box",
-                      backgroundColor: "#fff", color: "#6e707e",
-                    }}
-                  />
-                </div>
-
-                <button
-                  type="submit"
+              {/* ✅ Walang form tag — onClick na lang */}
+              <div style={{ marginBottom: "1rem" }}>
+                <input
+                  type="text"
+                  placeholder="Enter username..."
+                  value={username}
+                  onChange={(e) => { setUsername(e.target.value); setError(""); }}
                   disabled={loading}
                   style={{
-                    display: "block", width: "100%", padding: "0.75rem",
-                    backgroundColor: loading ? "#a0b4f0" : "#4e73df",
-                    color: "#fff", border: "none",
-                    borderRadius: "10rem", fontSize: "0.9rem", fontWeight: 600,
-                    cursor: loading ? "not-allowed" : "pointer",
-                    transition: "background-color 0.2s ease-in-out",
+                    display: "block", width: "100%",
+                    padding: "0.75rem 1.25rem", fontSize: "0.85rem",
+                    borderRadius: "10rem", border: "1px solid #d1d3e2",
+                    outline: "none", boxSizing: "border-box",
+                    backgroundColor: "#fff", color: "#6e707e",
                   }}
-                >
-                  {loading ? "Logging in..." : "Login"}
-                </button>
-              </form>
+                />
+              </div>
+              <div style={{ marginBottom: "1rem" }}>
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                  disabled={loading}
+                  style={{
+                    display: "block", width: "100%",
+                    padding: "0.75rem 1.25rem", fontSize: "0.85rem",
+                    borderRadius: "10rem", border: "1px solid #d1d3e2",
+                    outline: "none", boxSizing: "border-box",
+                    backgroundColor: "#fff", color: "#6e707e",
+                  }}
+                />
+              </div>
+
+              <button
+                onClick={handleSubmit}
+                disabled={loading}
+                style={{
+                  display: "block", width: "100%", padding: "0.75rem",
+                  backgroundColor: loading ? "#a0b4f0" : "#4e73df",
+                  color: "#fff", border: "none",
+                  borderRadius: "10rem", fontSize: "0.9rem", fontWeight: 600,
+                  cursor: loading ? "not-allowed" : "pointer",
+                }}
+              >
+                {loading ? "Logging in..." : "Login"}
+              </button>
 
               <hr style={{ margin: "1.5rem 0" }} />
 

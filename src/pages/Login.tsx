@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useIonRouter } from "@ionic/react";
+import { CapacitorHttp } from "@capacitor/core";
 
 const BASE_URL = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php";
 
@@ -21,24 +22,16 @@ const Login = () => {
     setError("");
 
     try {
-      const response = await fetch(`${BASE_URL}/API_user/loginProcess`, {
-        method: "POST",
+      const response = await CapacitorHttp.post({
+        url: `${BASE_URL}/API_user/loginProcess`,
         headers: {
           "Content-Type": "application/json",
-          "X-Requested-With": "XMLHttpRequest",
-          Accept: "application/json",
+          "Accept": "application/json",
         },
-        body: JSON.stringify({ username: username.trim(), password: password }),
+        data: { username: username.trim(), password: password },
       });
 
-      const text = await response.text();
-      let data: any = {};
-      try {
-        data = JSON.parse(text);
-      } catch {
-        setError("Server error. Check PHP logs.");
-        return;
-      }
+      const data = response.data;
 
       if (data.status === "success") {
         const user_id = data.user_id ?? data.data?.user_id ?? data.user?.user_id ?? "";
@@ -90,7 +83,6 @@ const Login = () => {
                 </div>
               )}
 
-              {/* ✅ Walang form tag — onClick na lang */}
               <div style={{ marginBottom: "1rem" }}>
                 <input
                   type="text"

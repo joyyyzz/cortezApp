@@ -34,6 +34,42 @@ import Search       from './pages/Search';
 
 setupIonicReact();
 
+
+if (Capacitor.isNativePlatform()) {
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    try {
+      const url    = typeof input === 'string' ? input : input instanceof URL ? input.toString() : (input as Request).url;
+      const method = init?.method || (input instanceof Request ? input.method : 'GET');
+      const headers = (init?.headers as Record<string, string>) || {};
+      let data: any = undefined;
+
+      if (init?.body) {
+        try {
+          data = JSON.parse(init.body as string);
+        } catch {
+          data = init.body;
+        }
+      }
+
+      const response = await CapacitorHttp.request({ url, method, headers, data });
+
+      const bodyStr = typeof response.data === 'string'
+        ? response.data
+        : JSON.stringify(response.data);
+
+      return new Response(bodyStr, {
+        status:  response.status,
+        headers: new Headers(response.headers as Record<string, string>),
+      });
+    } catch (err) {
+      // ✅ Fallback sa original fetch kung may error
+      return originalFetch(input, init);
+    }
+  };
+}
+
+
 const App: React.FC = () => (
   <IonApp>
     <IonReactRouter>

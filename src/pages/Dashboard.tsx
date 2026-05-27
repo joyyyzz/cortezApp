@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useHistory } from "react-router-dom";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const API_BASE = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_main";
 const BASE_UPLOADS = "https://itservicesph.com/IT383/CORTEZ/Cortez/uploads/profile/";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -55,19 +54,7 @@ function cleanPhoto(p: string | null | undefined): string | null {
 }
 
 // ─── API calls ────────────────────────────────────────────────────────────────
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    credentials: "include",
-    ...options,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error ?? `HTTP ${res.status}`);
-  }
-  const json = await res.json();
-  if (!json.success) throw new Error(json.error ?? "Unknown error");
-  return json as T;
-}
+import { apiFetch, API_BASE } from "../utils/api";
 
 async function fetchStats(): Promise<StatsData> {
   const r = await apiFetch<{ success: boolean; data: StatsData }>("/stats");
@@ -85,11 +72,14 @@ async function archiveSpot(id: number): Promise<void> {
 }
 
 async function addSpot(formData: FormData): Promise<TouristSpot> {
-  const r = await apiFetch<{ success: boolean; data: TouristSpot }>("/spots", {
+  const res = await fetch(`${API_BASE}/spots`, {
     method: "POST",
     body: formData,
+    credentials: "include",
   });
-  return r.data;
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error ?? "Unknown error");
+  return json.data;
 }
 
 // ─── Desc Modal ───────────────────────────────────────────────────────────────
@@ -243,9 +233,7 @@ export default function Dashboard({
 
     // Fetch dashboard user info, passing user_id as fallback since CI session
     // may not persist cross-origin between localhost and itservicesph.com
-    fetch(`${API_BASE}/dashboard?user_id=${userId ?? ""}`, {
-      credentials: "include",
-    })
+    apiFetch<any>(`/dashboard?user_id=${userId ?? ""}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.status === "success" && data.user?.username) {

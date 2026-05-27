@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useHistory } from "react-router-dom";
+import { CapacitorHttp } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BASE_URL      = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php";
@@ -62,7 +64,6 @@ function LeafletMap({
   const markersRef      = useRef<any[]>([]);
   const spotCoordsRef   = useRef<Map<number, { lat: number; lng: number }>>(new Map());
 
-  // ── Init map once ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainerRef.current || mapInstRef.current) return;
     const L = (window as any).L;
@@ -76,10 +77,8 @@ function LeafletMap({
       attribution: "&copy; OpenStreetMap contributors",
     }).addTo(map);
 
-    // Expose flyTo for search pick
     flyToRef.current = (lat: number, lng: number) => {
       map.flyTo([lat, lng], 14, { animate: true, duration: 1.2 });
-      // Open popup for marker at those coords
       setTimeout(() => {
         markersRef.current.forEach(m => {
           const ll = m.getLatLng();
@@ -97,13 +96,11 @@ function LeafletMap({
     };
   }, []);
 
-  // ── Place markers when spots change ───────────────────────────────────────
   useEffect(() => {
     const map = mapInstRef.current;
     const L   = (window as any).L;
     if (!map || !L || spots.length === 0) return;
 
-    // Clear existing markers
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
@@ -139,7 +136,6 @@ function LeafletMap({
       if (sid) spotCoordsRef.current.set(sid, { lat, lng });
     }
 
-    // Spots with coords already — place immediately
     const needsGeocode: Spot[] = [];
     spots.forEach(spot => {
       if (spot.lat != null && spot.lng != null) {
@@ -149,22 +145,28 @@ function LeafletMap({
       }
     });
 
-    // Geocode the rest via server proxy then Nominatim fallback
-    needsGeocode.forEach(spot => {
+    // ✅ CapacitorHttp para sa geocode proxy sa mobile
+    needsGeocode.forEach(async spot => {
       const query = encodeURIComponent(spot.location + ", Philippines");
-      fetch(`${API_ADMIN}/nominatim_proxy?q=${query}`, { credentials: "include" })
-        .then(r => r.json())
-        .then((data: any[]) => {
-          if (data?.[0]) {
-            addMarker(spot, parseFloat(data[0].lat), parseFloat(data[0].lon));
-          }
-        })
-        .catch(() => {
-          // Fallback: direct Nominatim
-          nominatimGeocode(spot.location).then(geo => {
-            if (geo) addMarker(spot, geo.lat, geo.lng);
+      try {
+        let data: any[];
+        if (Capacitor.isNativePlatform()) {
+          const response = await CapacitorHttp.get({
+            url: `${API_ADMIN}/nominatim_proxy?q=${query}`,
+            headers: { "Accept": "application/json" },
           });
-        });
+          data = response.data;
+        } else {
+          const r = await fetch(`${API_ADMIN}/nominatim_proxy?q=${query}`, { credentials: "include" });
+          data = await r.json();
+        }
+        if (data?.[0]) {
+          addMarker(spot, parseFloat(data[0].lat), parseFloat(data[0].lon));
+        }
+      } catch {
+        const geo = await nominatimGeocode(spot.location);
+        if (geo) addMarker(spot, geo.lat, geo.lng);
+      }
     });
   }, [spots]);
 
@@ -214,7 +216,6 @@ export default function MapAdmin({
 
   useEffect(() => { spotsRef.current = spots; }, [spots]);
 
-  // ── Load Leaflet JS once ───────────────────────────────────────────────────
   useEffect(() => {
     if (!document.getElementById("leaflet-css")) {
       const link = document.createElement("link");
@@ -232,27 +233,37 @@ export default function MapAdmin({
     }
   }, []);
 
-  // ── Fetch spots from API_mapadmin/spots ────────────────────────────────────
+  // ✅ Fetch spots — CapacitorHttp sa mobile
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetch(`${API_ADMIN}/spots`, { method: "GET", credentials: "include" })
-      .then(r => {
-        if (!r.ok) throw new Error(`Failed to load spots (${r.status})`);
-        return r.json();
-      })
-      .then((data: Spot[]) => {
+
+    const doFetch = async () => {
+      try {
+        let data: Spot[];
+        if (Capacitor.isNativePlatform()) {
+          const response = await CapacitorHttp.get({
+            url: `${API_ADMIN}/spots`,
+            headers: { "Accept": "application/json" },
+          });
+          data = response.data;
+        } else {
+          const r = await fetch(`${API_ADMIN}/spots`, { method: "GET", credentials: "include" });
+          if (!r.ok) throw new Error(`Failed to load spots (${r.status})`);
+          data = await r.json();
+        }
         setSpots(data);
-        setLoading(false);
-      })
-      .catch((e: Error) => {
+      } catch (e: any) {
         setError(e.message);
+      } finally {
         setLoading(false);
-      });
+      }
+    };
+
+    doFetch();
   }, []);
 
-  // ── Live search — calls GET /api_mapadmin/search_json?keyword=… ───────────
-  // Mirrors MapPage.tsx search: debounced 300ms, JSON response, image thumbnail
+  // ✅ Search — CapacitorHttp sa mobile
   const handleSearchInput = useCallback((val: string) => {
     setSearchQuery(val);
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -265,29 +276,28 @@ export default function MapAdmin({
 
     searchTimer.current = setTimeout(async () => {
       let results: SearchResult[] = [];
-
-      // ── Try API JSON search first ──────────────────────────────────────
       try {
-        const res  = await fetch(`${API_ADMIN}/search_json?keyword=${encodeURIComponent(val)}`, {
-          credentials: "include",
-        });
-        const text = await res.text();
-        if (!text.trimStart().startsWith("<")) {
-          const data = JSON.parse(text);
-          if (data?.status === "ok" && Array.isArray(data.results)) {
-            results = data.results;
-          }
+        let data: any;
+        if (Capacitor.isNativePlatform()) {
+          const response = await CapacitorHttp.get({
+            url: `${API_ADMIN}/search_json?keyword=${encodeURIComponent(val)}`,
+            headers: { "Accept": "application/json" },
+          });
+          data = response.data;
+        } else {
+          const res  = await fetch(`${API_ADMIN}/search_json?keyword=${encodeURIComponent(val)}`, { credentials: "include" });
+          const text = await res.text();
+          if (!text.trimStart().startsWith("<")) data = JSON.parse(text);
+        }
+        if (data?.status === "ok" && Array.isArray(data.results)) {
+          results = data.results;
         }
       } catch {}
 
-      // ── Client-side fallback if API not yet deployed ───────────────────
       if (!results.length) {
         const kw = val.toLowerCase();
         results = spotsRef.current
-          .filter(s =>
-            s.spot_name.toLowerCase().includes(kw) ||
-            s.location.toLowerCase().includes(kw)
-          )
+          .filter(s => s.spot_name.toLowerCase().includes(kw) || s.location.toLowerCase().includes(kw))
           .map(s => ({
             spot_id:   (s.spot_id ?? s.id) as number,
             spot_name: s.spot_name,
@@ -301,42 +311,43 @@ export default function MapAdmin({
     }, 300);
   }, []);
 
-  // ── Pick search result → fly map to that spot (same as MapPage) ───────────
+  // ✅ Pick result — CapacitorHttp sa mobile
   const handlePickResult = useCallback(async (result: SearchResult) => {
     setSearchQuery(result.spot_name);
     setShowSearchDrop(false);
 
-    // Check if we already have coords
-    const spot = spotsRef.current.find(
-      s => (s.spot_id ?? s.id) === result.spot_id
-    );
+    const spot = spotsRef.current.find(s => (s.spot_id ?? s.id) === result.spot_id);
     if (spot?.lat != null && spot.lng != null && flyToRef.current) {
       flyToRef.current(spot.lat, spot.lng);
       return;
     }
 
-    // Geocode via server proxy then fly
     try {
-      const q   = encodeURIComponent(result.location + ", Philippines");
-      const res = await fetch(`${API_ADMIN}/nominatim_proxy?q=${q}`, { credentials: "include" });
-      const data: any[] = await res.json();
+      const q = encodeURIComponent(result.location + ", Philippines");
+      let data: any[];
+      if (Capacitor.isNativePlatform()) {
+        const response = await CapacitorHttp.get({
+          url: `${API_ADMIN}/nominatim_proxy?q=${q}`,
+          headers: { "Accept": "application/json" },
+        });
+        data = response.data;
+      } else {
+        const res = await fetch(`${API_ADMIN}/nominatim_proxy?q=${q}`, { credentials: "include" });
+        data = await res.json();
+      }
       if (data?.[0] && flyToRef.current) {
         flyToRef.current(parseFloat(data[0].lat), parseFloat(data[0].lon));
         return;
       }
     } catch {}
 
-    // Direct Nominatim fallback
     const geo = await nominatimGeocode(result.location);
     if (geo && flyToRef.current) flyToRef.current(geo.lat, geo.lng);
   }, []);
 
-  // ── Close dropdowns on outside click ──────────────────────────────────────
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowSearchDrop(false);
-      }
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setShowSearchDrop(false);
     }
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -344,21 +355,14 @@ export default function MapAdmin({
 
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (userAreaRef.current && !userAreaRef.current.contains(e.target as Node)) {
-        setUserDropOpen(false);
-      }
+      if (userAreaRef.current && !userAreaRef.current.contains(e.target as Node)) setUserDropOpen(false);
     }
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const currentAvatar = cleanPhoto(savedPhoto)
-    ? `${BASE_UPLOADS}${cleanPhoto(savedPhoto)}`
-    : null;
-
-  const topbarAvatar =
-    currentAvatar ??
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=1a56db&color=fff`;
+  const currentAvatar = cleanPhoto(savedPhoto) ? `${BASE_UPLOADS}${cleanPhoto(savedPhoto)}` : null;
+  const topbarAvatar  = currentAvatar ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(username)}&background=1a56db&color=fff`;
 
   const NAV_ITEMS = [
     { icon: "fa-tachometer-alt", label: "Dashboard", path: "/dashboard"   },
@@ -377,118 +381,54 @@ export default function MapAdmin({
         html,body,#root { height:100%; overflow:hidden; }
         body { font-family:'DM Sans',sans-serif; background:#f8f9fc; }
         #wrapper { display:flex; height:100vh; overflow:hidden; }
-
-        /* ── Sidebar ── */
-        #sidebar {
-          width:225px; min-width:225px;
-          background:linear-gradient(180deg,#4e73df 10%,#224abe 100%);
-          display:flex; flex-direction:column;
-          height:100vh; flex-shrink:0; z-index:100;
-        }
+        #sidebar { width:225px; min-width:225px; background:linear-gradient(180deg,#4e73df 10%,#224abe 100%); display:flex; flex-direction:column; height:100vh; flex-shrink:0; z-index:100; }
         .sidebar-brand { display:flex; align-items:center; gap:10px; padding:1.25rem 1rem; color:#fff; text-decoration:none; }
         .sidebar-brand-icon { font-size:22px; transform:rotate(-15deg); display:inline-block; }
         .sidebar-brand-text { font-size:17px; font-weight:700; }
         hr.sidebar-divider { border:none; border-top:1px solid rgba(255,255,255,0.15); margin:0 1rem; }
         .sidebar-nav { list-style:none; padding:0; flex:1; }
-        .sidebar-nav li a {
-          display:flex; align-items:center; gap:10px; padding:12px 20px;
-          color:rgba(255,255,255,0.75); font-size:13.5px; font-weight:500;
-          text-decoration:none; transition:background 0.15s,color 0.15s;
-        }
-        .sidebar-nav li a:hover,
-        .sidebar-nav li.active a { background:rgba(255,255,255,0.12); color:#fff; }
+        .sidebar-nav li a { display:flex; align-items:center; gap:10px; padding:12px 20px; color:rgba(255,255,255,0.75); font-size:13.5px; font-weight:500; text-decoration:none; transition:background 0.15s,color 0.15s; }
+        .sidebar-nav li a:hover, .sidebar-nav li.active a { background:rgba(255,255,255,0.12); color:#fff; }
         .sidebar-nav li a i { width:18px; text-align:center; font-size:14px; }
-
-        /* ── Content wrapper ── */
-        #content-wrapper {
-          flex:1; display:flex; flex-direction:column;
-          height:100vh; overflow-y:auto; overflow-x:hidden;
-          scrollbar-width:thin; scrollbar-color:#bfdbfe #f1f5f9;
-        }
+        #content-wrapper { flex:1; display:flex; flex-direction:column; height:100vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#bfdbfe #f1f5f9; }
         #content-wrapper::-webkit-scrollbar { width:8px; }
         #content-wrapper::-webkit-scrollbar-track { background:#f1f5f9; }
         #content-wrapper::-webkit-scrollbar-thumb { background:#bfdbfe; border-radius:4px; }
         #content-wrapper::-webkit-scrollbar-thumb:hover { background:#93c5fd; }
-
-        /* ── Topbar ── */
-        #topbar {
-          height:65px; flex-shrink:0; background:#fff;
-          box-shadow:0 2px 4px rgba(0,0,0,0.08);
-          display:flex; align-items:center; padding:0 1.5rem; gap:1rem;
-          position:sticky; top:0; z-index:99;
-        }
+        #topbar { height:65px; flex-shrink:0; background:#fff; box-shadow:0 2px 4px rgba(0,0,0,0.08); display:flex; align-items:center; padding:0 1.5rem; gap:1rem; position:sticky; top:0; z-index:99; }
         .topbar-search { display:flex; position:relative; }
-        .topbar-search input {
-          border:1px solid #d1d3e2; border-right:none;
-          border-radius:5px 0 0 5px; padding:7px 14px;
-          font-size:13px; font-family:'DM Sans',sans-serif;
-          background:#f8f9fc; color:#333; width:280px; outline:none;
-        }
-        .topbar-search button {
-          background:#4e73df; border:none; border-radius:0 5px 5px 0;
-          padding:7px 14px; color:#fff; cursor:pointer;
-        }
-
-        /* ── Search dropdown — mirrors MapPage style ── */
-        .search-dropdown {
-          position:absolute; top:100%; left:0; background:#fff; width:340px;
-          z-index:1000; border:1px solid #ddd; border-radius:5px;
-          max-height:300px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.10);
-        }
-        .search-item {
-          display:flex; align-items:center; padding:10px;
-          border-bottom:1px solid #eee; cursor:pointer;
-          text-decoration:none; color:inherit;
-        }
+        .topbar-search input { border:1px solid #d1d3e2; border-right:none; border-radius:5px 0 0 5px; padding:7px 14px; font-size:13px; font-family:'DM Sans',sans-serif; background:#f8f9fc; color:#333; width:280px; outline:none; }
+        .topbar-search button { background:#4e73df; border:none; border-radius:0 5px 5px 0; padding:7px 14px; color:#fff; cursor:pointer; }
+        .search-dropdown { position:absolute; top:100%; left:0; background:#fff; width:340px; z-index:1000; border:1px solid #ddd; border-radius:5px; max-height:300px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,0.10); }
+        .search-item { display:flex; align-items:center; padding:10px; border-bottom:1px solid #eee; cursor:pointer; text-decoration:none; color:inherit; }
         .search-item:hover { background:#f5f5f5; }
-        .search-item img {
-          width:45px; height:45px; border-radius:5px;
-          margin-right:10px; object-fit:cover; flex-shrink:0;
-        }
-        .search-item-no-img {
-          width:45px; height:45px; border-radius:5px; margin-right:10px;
-          background:#eff6ff; border:1px solid #bfdbfe;
-          display:flex; align-items:center; justify-content:center; flex-shrink:0;
-        }
+        .search-item img { width:45px; height:45px; border-radius:5px; margin-right:10px; object-fit:cover; flex-shrink:0; }
+        .search-item-no-img { width:45px; height:45px; border-radius:5px; margin-right:10px; background:#eff6ff; border:1px solid #bfdbfe; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
         .search-item-no-img i { color:#93c5fd; font-size:18px; }
-        .search-text    { line-height:1.2; }
-        .search-name    { font-weight:bold; font-size:13px; color:#1e3a8a; }
-        .search-location{ font-size:12px; color:gray; }
+        .search-text { line-height:1.2; }
+        .search-name { font-weight:bold; font-size:13px; color:#1e3a8a; }
+        .search-location { font-size:12px; color:gray; }
         .search-no-result { padding:12px 16px; font-size:13px; color:#94a3b8; text-align:center; }
-
         .topbar-right { display:flex; align-items:center; gap:1rem; margin-left:auto; }
         .topbar-divider { border-left:1px solid #e3e6f0; height:36px; }
         .user-area { display:flex; align-items:center; gap:8px; cursor:pointer; position:relative; }
         .user-area > span { font-size:13px; font-weight:600; color:#333; }
         .user-area img { width:32px; height:32px; border-radius:50%; object-fit:cover; }
-        .user-dropdown {
-          position:absolute; top:calc(100% + 10px); right:0; background:#fff;
-          border:1px solid #e3e6f0; border-radius:8px;
-          box-shadow:0 4px 16px rgba(0,0,0,0.10); min-width:160px; z-index:200;
-        }
-        .user-dropdown a {
-          display:flex; align-items:center; gap:8px;
-          padding:10px 16px; font-size:13px; color:#555; text-decoration:none;
-        }
+        .user-dropdown { position:absolute; top:calc(100% + 10px); right:0; background:#fff; border:1px solid #e3e6f0; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,0.10); min-width:160px; z-index:200; }
+        .user-dropdown a { display:flex; align-items:center; gap:8px; padding:10px 16px; font-size:13px; color:#555; text-decoration:none; }
         .user-dropdown a:hover { background:#f8f9fc; }
-
-        /* ── Page content ── */
         #page-content { flex:1; padding:1.5rem; }
         .ta-card { background:#fff; border-radius:14px; border:1.5px solid #bfdbfe; box-shadow:0 2px 8px rgba(26,86,219,0.07); overflow:hidden; }
         .ta-card-header { padding:1rem 1.25rem; border-bottom:1.5px solid #bfdbfe; display:flex; align-items:center; gap:10px; }
         .ta-section-title { font-family:'Playfair Display',serif; font-size:17px; color:#1a56db; margin:0; border-left:4px solid #1a56db; padding-left:12px; }
         .ta-badge { display:inline-flex; align-items:center; gap:5px; background:#eff6ff; border:1px solid #bfdbfe; color:#1a56db; border-radius:20px; padding:3px 12px; font-size:12px; font-weight:500; margin-left:auto; }
         .ta-card-body { padding:1.25rem; }
-
         .map-loading { height:200px; display:flex; align-items:center; justify-content:center; color:#6b8ab8; font-size:14px; gap:8px; }
         .map-error { background:#fef2f2; border:1px solid #fca5a5; color:#b91c1c; border-radius:8px; padding:12px 16px; font-size:13px; margin-bottom:1rem; }
-
         @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
       `}</style>
 
       <div id="wrapper">
-
-        {/* ── SIDEBAR ── */}
         <div id="sidebar">
           <a className="sidebar-brand" href="/dashboard">
             <span className="sidebar-brand-icon"><i className="fas fa-laugh-wink" /></span>
@@ -507,13 +447,8 @@ export default function MapAdmin({
           </ul>
         </div>
 
-        {/* ── CONTENT WRAPPER ── */}
         <div id="content-wrapper">
-
-          {/* ── TOPBAR ── */}
           <div id="topbar">
-
-            {/* Search — same UX as MapPage.tsx */}
             <div className="topbar-search" ref={searchRef}>
               <input
                 type="text"
@@ -523,31 +458,18 @@ export default function MapAdmin({
                 onBlur={() => setTimeout(() => setShowSearchDrop(false), 150)}
                 autoComplete="off"
               />
-              <button type="button">
-                <i className="fas fa-search fa-sm" />
-              </button>
-
+              <button type="button"><i className="fas fa-search fa-sm" /></button>
               {showSearchDrop && (
                 <div className="search-dropdown">
                   {searchResults.length === 0 ? (
                     <div className="search-no-result">No spots found.</div>
                   ) : (
                     searchResults.map(result => (
-                      <div
-                        key={result.spot_id}
-                        className="search-item"
-                        onMouseDown={() => handlePickResult(result)}
-                      >
+                      <div key={result.spot_id} className="search-item" onMouseDown={() => handlePickResult(result)}>
                         {result.image_url ? (
-                          <img
-                            src={result.image_url}
-                            alt={result.spot_name}
-                            onError={e => ((e.currentTarget as HTMLImageElement).style.display = "none")}
-                          />
+                          <img src={result.image_url} alt={result.spot_name} onError={e => ((e.currentTarget as HTMLImageElement).style.display = "none")} />
                         ) : (
-                          <div className="search-item-no-img">
-                            <i className="fas fa-map-marker-alt" />
-                          </div>
+                          <div className="search-item-no-img"><i className="fas fa-map-marker-alt" /></div>
                         )}
                         <div className="search-text">
                           <div className="search-name">{result.spot_name}</div>
@@ -559,7 +481,6 @@ export default function MapAdmin({
                 </div>
               )}
             </div>
-
             <div className="topbar-right">
               <div className="topbar-divider" />
               <div className="user-area" ref={userAreaRef} onClick={() => setUserDropOpen(o => !o)}>
@@ -567,10 +488,7 @@ export default function MapAdmin({
                 <img src={topbarAvatar} alt="avatar" />
                 {userDropOpen && (
                   <div className="user-dropdown">
-                    <a href="#" onClick={e => {
-                      e.preventDefault();
-                      window.location.href = `${BASE_URL}/user/logout`;
-                    }}>
+                    <a href="#" onClick={e => { e.preventDefault(); history.push("/login"); }}>
                       <i className="fas fa-sign-out-alt fa-sm fa-fw" style={{ color: "#aaa" }} /> Logout
                     </a>
                   </div>
@@ -579,7 +497,6 @@ export default function MapAdmin({
             </div>
           </div>
 
-          {/* ── PAGE CONTENT ── */}
           <div id="page-content">
             <div className="ta-card">
               <div className="ta-card-header">
@@ -590,14 +507,12 @@ export default function MapAdmin({
                 </span>
               </div>
               <div className="ta-card-body">
-
                 {error && (
                   <div className="map-error">
                     <i className="fas fa-exclamation-circle" style={{ marginRight: 6 }} />
                     {error}
                   </div>
                 )}
-
                 {loading || !leafletReady ? (
                   <div className="map-loading">
                     <i className="fas fa-spinner" style={{ animation: "spin 1.2s linear infinite" }} />
@@ -606,11 +521,9 @@ export default function MapAdmin({
                 ) : (
                   <LeafletMap spots={spots} flyToRef={flyToRef} />
                 )}
-
               </div>
             </div>
           </div>
-
         </div>
       </div>
     </>

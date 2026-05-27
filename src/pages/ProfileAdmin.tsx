@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { useHistory } from "react-router-dom";
+import { CapacitorHttp } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BASE_URL = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php";
 
 const API = {
-  getProfile:   (user_id: number) => `${BASE_URL}/API_profileadmin?user_id=${user_id}`,
+  getProfile:    (user_id: number) => `${BASE_URL}/API_profileadmin?user_id=${user_id}`,
   updateProfile: `${BASE_URL}/API_profileadmin/updateProfile`,
   uploadPhoto:   `${BASE_URL}/API_profileadmin/uploadProfilePhoto`,
 };
@@ -69,14 +71,23 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
   const photoInputRef = useRef<HTMLInputElement>(null);
   const userAreaRef   = useRef<HTMLDivElement>(null);
 
+  // ✅ Fetch profile — CapacitorHttp sa mobile
   useEffect(() => {
     setLoading(true);
-    fetch(API.getProfile(userId))
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<ApiResponse<UserInfo>>;
-      })
-      .then(res => {
+    const doFetch = async () => {
+      try {
+        let res: ApiResponse<UserInfo>;
+        if (Capacitor.isNativePlatform()) {
+          const response = await CapacitorHttp.get({
+            url: API.getProfile(userId),
+            headers: { "Accept": "application/json" },
+          });
+          res = response.data as ApiResponse<UserInfo>;
+        } else {
+          const r = await fetch(API.getProfile(userId));
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          res = await r.json() as ApiResponse<UserInfo>;
+        }
         if (res.status === "success" && res.data) {
           setUserInfo(res.data);
           setForm({ fname: res.data.fname ?? "", mname: res.data.mname ?? "", lname: res.data.lname ?? "", address: res.data.address ?? "" });
@@ -87,9 +98,13 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
           }
           if (res.data.username) localStorage.setItem("username", res.data.username);
         }
-      })
-      .catch((e: Error) => showToast(e.message, true))
-      .finally(() => setLoading(false));
+      } catch (e: any) {
+        showToast(e.message, true);
+      } finally {
+        setLoading(false);
+      }
+    };
+    doFetch();
   }, [userId]);
 
   useEffect(() => {
@@ -116,6 +131,7 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
     setToast({ message, isError });
   }
 
+  // ✅ Upload photo — regular fetch (FormData)
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -130,33 +146,66 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
     formData.append("profile_photo", file);
     formData.append("user_id", String(userInfo.user_id));
     setUploading(true);
+    // ✅ Regular fetch lang para sa FormData/file upload
     fetch(API.uploadPhoto, { method:"POST", body:formData })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() as Promise<ApiResponse>; })
       .then(res => {
-        console.log("Upload API response:", res);
         if (res.success === true) {
-          if (res.url) { const filename = res.url.split("/").pop() ?? ""; setUserInfo(prev => prev ? { ...prev, profile_photo: filename } : prev); localStorage.setItem("profile_photo", filename); }
+          if (res.url) {
+            const filename = res.url.split("/").pop() ?? "";
+            setUserInfo(prev => prev ? { ...prev, profile_photo: filename } : prev);
+            localStorage.setItem("profile_photo", filename);
+          }
           setAvatarPreview(null);
           showToast(res.message ?? "Profile photo updated!");
-        } else { setAvatarPreview(null); showToast(res.message ?? "Upload failed.", true); }
+        } else {
+          setAvatarPreview(null);
+          showToast(res.message ?? "Upload failed.", true);
+        }
       })
       .catch((err: Error) => { setAvatarPreview(null); showToast(`Upload error: ${err.message}`, true); })
       .finally(() => { setUploading(false); if (photoInputRef.current) photoInputRef.current.value = ""; });
   }
 
+  // ✅ Save profile — CapacitorHttp sa mobile
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!userInfo) return;
-    const body = new FormData();
-    body.append("user_id", String(userInfo.user_id));
-    body.append("fname", form.fname); body.append("mname", form.mname);
-    body.append("lname", form.lname); body.append("address", form.address);
     try {
-      const r    = await fetch(API.updateProfile, { method:"POST", body });
-      const data = await r.json() as ApiResponse;
-      if (data.status === "success") { setUserInfo(prev => prev ? { ...prev, ...form } : prev); setEditOpen(false); showToast(data.message ?? "Profile updated successfully!"); }
-      else showToast(data.message ?? "Update failed.", true);
-    } catch { showToast("Update error. Please try again.", true); }
+      let data: ApiResponse;
+      if (Capacitor.isNativePlatform()) {
+        const response = await CapacitorHttp.post({
+          url: API.updateProfile,
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          data: {
+            user_id: String(userInfo.user_id),
+            fname: form.fname,
+            mname: form.mname,
+            lname: form.lname,
+            address: form.address,
+          },
+        });
+        data = response.data as ApiResponse;
+      } else {
+        const body = new FormData();
+        body.append("user_id", String(userInfo.user_id));
+        body.append("fname", form.fname);
+        body.append("mname", form.mname);
+        body.append("lname", form.lname);
+        body.append("address", form.address);
+        const r = await fetch(API.updateProfile, { method:"POST", body });
+        data = await r.json() as ApiResponse;
+      }
+      if (data.status === "success") {
+        setUserInfo(prev => prev ? { ...prev, ...form } : prev);
+        setEditOpen(false);
+        showToast(data.message ?? "Profile updated successfully!");
+      } else {
+        showToast(data.message ?? "Update failed.", true);
+      }
+    } catch {
+      showToast("Update error. Please try again.", true);
+    }
   }
 
   const fullName    = userInfo ? [userInfo.fname, userInfo.mname, userInfo.lname].filter(Boolean).join(" ").trim() : "";
@@ -181,158 +230,65 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap');
-
         *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
         html,body,#root { height:100%; overflow:hidden; }
         body { font-family:'DM Sans',sans-serif; background:#f8f9fc; }
-
-        /* ── Layout shell ── */
         #wrapper { display:flex; height:100vh; overflow:hidden; }
-
-        /* ── Sidebar: fixed, full height, never scrolls ── */
-        #sidebar {
-          width:225px; min-width:225px;
-          background:linear-gradient(180deg,#4e73df 10%,#224abe 100%);
-          display:flex; flex-direction:column;
-          height:100vh;
-          position:fixed; top:0; left:0;
-          flex-shrink:0; z-index:100;
-        }
+        #sidebar { width:225px; min-width:225px; background:linear-gradient(180deg,#4e73df 10%,#224abe 100%); display:flex; flex-direction:column; height:100vh; position:fixed; top:0; left:0; flex-shrink:0; z-index:100; }
         .sidebar-brand { display:flex; align-items:center; gap:10px; padding:1.25rem 1rem; color:#fff; text-decoration:none; }
         .sidebar-brand-icon { font-size:22px; transform:rotate(-15deg); display:inline-block; }
         .sidebar-brand-text { font-size:17px; font-weight:700; }
         hr.sidebar-divider { border:none; border-top:1px solid rgba(255,255,255,0.15); margin:0 1rem; }
         .sidebar-nav { list-style:none; padding:0; flex:1; }
-        .sidebar-nav li a {
-          display:flex; align-items:center; gap:10px; padding:12px 20px;
-          color:rgba(255,255,255,0.75); font-size:13.5px; font-weight:500;
-          text-decoration:none; transition:background 0.15s, color 0.15s;
-        }
-        .sidebar-nav li a:hover,
-        .sidebar-nav li.active a { background:rgba(255,255,255,0.12); color:#fff; }
+        .sidebar-nav li a { display:flex; align-items:center; gap:10px; padding:12px 20px; color:rgba(255,255,255,0.75); font-size:13.5px; font-weight:500; text-decoration:none; transition:background 0.15s, color 0.15s; }
+        .sidebar-nav li a:hover, .sidebar-nav li.active a { background:rgba(255,255,255,0.12); color:#fff; }
         .sidebar-nav li a i { width:18px; text-align:center; font-size:14px; }
-
-        /* ── Content wrapper: offset sidebar, fills height, scrolls ── */
-        #content-wrapper {
-          margin-left:225px;
-          flex:1;
-          display:flex;
-          flex-direction:column;
-          height:100vh;
-          overflow-y:auto;
-          overflow-x:hidden;
-
-          /* Blue scrollbar — same across all pages */
-          scrollbar-width:thin;
-          scrollbar-color:#bfdbfe #f1f5f9;
-        }
-
-        /* Webkit blue scrollbar */
+        #content-wrapper { margin-left:225px; flex:1; display:flex; flex-direction:column; height:100vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#bfdbfe #f1f5f9; }
         #content-wrapper::-webkit-scrollbar { width:8px; }
         #content-wrapper::-webkit-scrollbar-track { background:#f1f5f9; }
         #content-wrapper::-webkit-scrollbar-thumb { background:#bfdbfe; border-radius:4px; }
         #content-wrapper::-webkit-scrollbar-thumb:hover { background:#93c5fd; }
-
-        /* ── Topbar: sticky at top of content-wrapper ── */
-        #topbar {
-          height:65px; flex-shrink:0;
-          background:#fff; box-shadow:0 2px 4px rgba(0,0,0,0.08);
-          display:flex; align-items:center; padding:0 1.5rem; gap:1rem;
-          position:sticky; top:0; z-index:99;
-        }
+        #topbar { height:65px; flex-shrink:0; background:#fff; box-shadow:0 2px 4px rgba(0,0,0,0.08); display:flex; align-items:center; padding:0 1.5rem; gap:1rem; position:sticky; top:0; z-index:99; }
         .topbar-search { display:flex; }
-        .topbar-search input {
-          border:1px solid #d1d3e2; border-right:none; border-radius:5px 0 0 5px;
-          padding:7px 14px; font-size:13px; font-family:'DM Sans',sans-serif;
-          background:#f8f9fc; color:#333; width:280px; outline:none;
-        }
+        .topbar-search input { border:1px solid #d1d3e2; border-right:none; border-radius:5px 0 0 5px; padding:7px 14px; font-size:13px; font-family:'DM Sans',sans-serif; background:#f8f9fc; color:#333; width:280px; outline:none; }
         .topbar-search button { background:#4e73df; border:none; border-radius:0 5px 5px 0; padding:7px 14px; color:#fff; cursor:pointer; }
         .topbar-right { display:flex; align-items:center; gap:1rem; margin-left:auto; }
         .topbar-divider { border-left:1px solid #e3e6f0; height:36px; }
         .user-area { display:flex; align-items:center; gap:8px; cursor:pointer; position:relative; }
         .user-area > span { font-size:13px; font-weight:600; color:#333; }
         .user-area img { width:32px; height:32px; border-radius:50%; object-fit:cover; }
-        .user-dropdown {
-          position:absolute; top:calc(100% + 10px); right:0; background:#fff;
-          border:1px solid #e3e6f0; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,0.1);
-          min-width:160px; z-index:200;
-        }
+        .user-dropdown { position:absolute; top:calc(100% + 10px); right:0; background:#fff; border:1px solid #e3e6f0; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,0.1); min-width:160px; z-index:200; }
         .user-dropdown a { display:flex; align-items:center; gap:8px; padding:10px 16px; font-size:13px; color:#555; text-decoration:none; }
         .user-dropdown a:hover { background:#f8f9fc; }
-
-        /* ── Page content ── */
-        #page-content {
-          flex:1; padding:1.5rem;
-          display:flex; align-items:flex-start; justify-content:center;
-        }
-
-        .profile-card {
-          background:#fff; border:1.5px solid #bfdbfe; border-radius:20px;
-          width:100%; max-width:560px; padding:2.5rem 2.25rem 2rem;
-          box-shadow:0 4px 20px rgba(26,86,219,0.08); text-align:center;
-        }
+        #page-content { flex:1; padding:1.5rem; display:flex; align-items:flex-start; justify-content:center; }
+        .profile-card { background:#fff; border:1.5px solid #bfdbfe; border-radius:20px; width:100%; max-width:560px; padding:2.5rem 2.25rem 2rem; box-shadow:0 4px 20px rgba(26,86,219,0.08); text-align:center; }
         .profile-avatar-wrap { position:relative; width:110px; height:110px; margin:0 auto 1rem; cursor:pointer; }
         .profile-avatar-wrap img { width:110px; height:110px; border-radius:50%; border:3px solid #bfdbfe; object-fit:cover; display:block; }
-        .profile-avatar-fallback {
-          width:110px; height:110px; border-radius:50%; border:3px solid #bfdbfe;
-          background:#eff6ff; display:flex; align-items:center; justify-content:center;
-        }
+        .profile-avatar-fallback { width:110px; height:110px; border-radius:50%; border:3px solid #bfdbfe; background:#eff6ff; display:flex; align-items:center; justify-content:center; }
         .profile-avatar-fallback i { font-size:46px; color:#1a56db; }
-        .avatar-overlay {
-          position:absolute; inset:0; border-radius:50%; background:rgba(26,86,219,0.55);
-          display:flex; flex-direction:column; align-items:center; justify-content:center;
-          opacity:0; transition:opacity 0.2s; color:#fff; font-size:11px; gap:4px;
-        }
+        .avatar-overlay { position:absolute; inset:0; border-radius:50%; background:rgba(26,86,219,0.55); display:flex; flex-direction:column; align-items:center; justify-content:center; opacity:0; transition:opacity 0.2s; color:#fff; font-size:11px; gap:4px; }
         .avatar-overlay i { font-size:22px; }
         .profile-avatar-wrap:hover .avatar-overlay { opacity:1; }
         .progress { height:4px; border-radius:4px; background:#e8f0fe; }
-        .progress-bar {
-          height:100%; border-radius:4px; background:#1a56db;
-          background-image:linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);
-          background-size:20px 100%; animation:progress-stripes 1s linear infinite;
-        }
+        .progress-bar { height:100%; border-radius:4px; background:#1a56db; background-image:linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent); background-size:20px 100%; animation:progress-stripes 1s linear infinite; }
         @keyframes progress-stripes { 0%{background-position:20px 0} 100%{background-position:0 0} }
         .profile-name { font-family:'Playfair Display',serif; font-size:22px; color:#1e3a8a; margin:0 0 4px; }
         .profile-handle { font-size:13px; color:#6b8ab8; margin:0 0 0.75rem; font-weight:500; }
         .ta-divider { border:none; border-top:1px dashed #bfdbfe; margin:0 0 1.25rem; }
-        .info-block {
-          background:#f8fbff; border-radius:10px; padding:12px 18px; margin-bottom:10px;
-          display:flex; justify-content:space-between; align-items:center;
-          border:1px solid #e8f0fe; text-align:left;
-        }
+        .info-block { background:#f8fbff; border-radius:10px; padding:12px 18px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center; border:1px solid #e8f0fe; text-align:left; }
         .info-key { font-size:11px; color:#6b8ab8; font-weight:500; text-transform:uppercase; letter-spacing:0.07em; }
         .info-val { font-size:14px; color:#1e3a8a; font-weight:500; }
         .info-val.muted { color:#bfdbfe; font-style:italic; font-weight:400; }
-        .btn-edit-profile {
-          display:flex; align-items:center; justify-content:center; gap:8px;
-          width:100%; margin-top:1.5rem; padding:12px;
-          background:#1a56db; color:#fff; border:none; border-radius:10px;
-          font-size:14px; font-family:'DM Sans',sans-serif; font-weight:500;
-          cursor:pointer; transition:background 0.15s;
-        }
+        .btn-edit-profile { display:flex; align-items:center; justify-content:center; gap:8px; width:100%; margin-top:1.5rem; padding:12px; background:#1a56db; color:#fff; border:none; border-radius:10px; font-size:14px; font-family:'DM Sans',sans-serif; font-weight:500; cursor:pointer; transition:background 0.15s; }
         .btn-edit-profile:hover { background:#1648c0; }
-        .edit-form-panel {
-          margin-top:1.25rem; background:#f8fbff; border:1.5px solid #bfdbfe;
-          border-radius:14px; padding:1.25rem; text-align:left;
-        }
+        .edit-form-panel { margin-top:1.25rem; background:#f8fbff; border:1.5px solid #bfdbfe; border-radius:14px; padding:1.25rem; text-align:left; }
         .ta-form-label { font-size:11px; font-weight:500; color:#1e3a8a; margin-bottom:5px; display:block; text-transform:uppercase; letter-spacing:0.06em; }
-        .ta-form-control {
-          border:1.5px solid #bfdbfe; border-radius:8px; padding:9px 12px; font-size:13px;
-          font-family:'DM Sans',sans-serif; width:100%; color:#334155; outline:none;
-          transition:border-color 0.15s; background:#fff; display:block;
-        }
+        .ta-form-control { border:1.5px solid #bfdbfe; border-radius:8px; padding:9px 12px; font-size:13px; font-family:'DM Sans',sans-serif; width:100%; color:#334155; outline:none; transition:border-color 0.15s; background:#fff; display:block; }
         .ta-form-control:focus { border-color:#1a56db; box-shadow:0 0 0 3px rgba(26,86,219,0.08); }
         .mb-3 { margin-bottom:14px; }
-        .ta-btn-save {
-          background:#1a56db; border:none; color:#fff; border-radius:8px;
-          padding:9px 20px; font-size:13px; font-weight:500; cursor:pointer;
-          font-family:'DM Sans',sans-serif; display:inline-flex; align-items:center; gap:6px;
-        }
+        .ta-btn-save { background:#1a56db; border:none; color:#fff; border-radius:8px; padding:9px 20px; font-size:13px; font-weight:500; cursor:pointer; font-family:'DM Sans',sans-serif; display:inline-flex; align-items:center; gap:6px; }
         .ta-btn-save:hover { background:#1648c0; }
-        .ta-btn-cancel {
-          background:#fff; border:1.5px solid #bfdbfe; color:#1a56db; border-radius:8px;
-          padding:9px 20px; font-size:13px; font-weight:500; cursor:pointer; font-family:'DM Sans',sans-serif;
-        }
+        .ta-btn-cancel { background:#fff; border:1.5px solid #bfdbfe; color:#1a56db; border-radius:8px; padding:9px 20px; font-size:13px; font-weight:500; cursor:pointer; font-family:'DM Sans',sans-serif; }
         .ta-btn-cancel:hover { background:#eff6ff; }
         .state-center { display:flex; align-items:center; justify-content:center; padding:3rem; gap:8px; color:#6b8ab8; font-size:14px; }
       `}</style>
@@ -340,8 +296,6 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
       {toast && <Toast message={toast.message} isError={toast.isError} />}
 
       <div id="wrapper">
-
-        {/* ── SIDEBAR ── */}
         <div id="sidebar">
           <a className="sidebar-brand" href="/dashboard">
             <span className="sidebar-brand-icon"><i className="fas fa-laugh-wink"></i></span>
@@ -360,10 +314,7 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
           </ul>
         </div>
 
-        {/* ── CONTENT WRAPPER (scrollable) ── */}
         <div id="content-wrapper">
-
-          {/* Topbar — sticky inside content-wrapper */}
           <div id="topbar">
             <div className="topbar-search">
               <input type="text" placeholder="Search for..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
@@ -376,7 +327,7 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
                 <img src={topbarAvatar} alt="avatar" />
                 {userDropOpen && (
                   <div className="user-dropdown">
-                    <a href="#" onClick={e => { e.preventDefault(); window.location.href = `${BASE_URL}/user/logout`; }}>
+                    <a href="#" onClick={e => { e.preventDefault(); history.push("/login"); }}>
                       <i className="fas fa-sign-out-alt fa-sm fa-fw" style={{ color:"#aaa" }}></i>
                       Logout
                     </a>
@@ -386,7 +337,6 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
             </div>
           </div>
 
-          {/* Page content */}
           <div id="page-content">
             {loading ? (
               <div className="state-center">
@@ -394,7 +344,6 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
               </div>
             ) : (
               <div className="profile-card">
-
                 <div className="profile-avatar-wrap" onClick={() => photoInputRef.current?.click()} title="Click to change photo">
                   {currentAvatar
                     ? <img src={currentAvatar} alt="Profile" />
@@ -465,7 +414,6 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
                     </form>
                   </div>
                 )}
-
               </div>
             )}
           </div>

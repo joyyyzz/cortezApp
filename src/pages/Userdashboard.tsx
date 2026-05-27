@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useHistory } from "react-router-dom";
+import { CapacitorHttp } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CategoryInfo {
@@ -31,8 +33,32 @@ const API_BASE = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_mai
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    credentials: "include",           // send session cookie
+  const url = `${API_BASE}${path}`;
+
+  // ✅ Use CapacitorHttp on mobile, regular fetch on browser
+  if (Capacitor.isNativePlatform()) {
+    let data: any = undefined;
+    if (opts?.body) {
+      try { data = JSON.parse(opts.body as string); } catch { data = opts.body; }
+    }
+    const response = await CapacitorHttp.request({
+      url,
+      method: opts?.method || "GET",
+      headers: {
+        "Accept": "application/json",
+        ...(opts?.headers as Record<string, string> ?? {}),
+      },
+      data,
+    });
+    if (response.status >= 400) {
+      throw new Error(response.data?.message ?? "Request failed");
+    }
+    return response.data as T;
+  }
+
+  // Browser — regular fetch
+  const res = await fetch(url, {
+    credentials: "include",
     headers: { "Accept": "application/json", ...(opts?.headers ?? {}) },
     ...opts,
   });

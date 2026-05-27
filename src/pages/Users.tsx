@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useHistory } from "react-router-dom";
+import { CapacitorHttp } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface UserInfo {
@@ -36,7 +38,6 @@ const UPLOADS    = `${CI3_ORIGIN}${APP_PATH}/uploads/profile/`;
 const AVATAR_URL = (name: string) =>
   `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=1a56db&color=fff`;
 
-// ✅ Helper para ma-extract ang filename lang mula sa buong URL o filename
 function cleanPhoto(p: string | null | undefined): string | null {
   if (!p) return null;
   return p.includes("http") ? p.split("/").pop() ?? null : p;
@@ -60,39 +61,57 @@ export default function Users({
 
   const history = useHistory();
 
-  // ✅ Read localStorage FIRST, before any state declarations
   const savedPhoto    = localStorage.getItem("profile_photo");
   const savedUsername = localStorage.getItem("username") ?? propUsername;
 
   const [info,         setInfo]        = useState<UserInfo[]>([]);
   const [sessionUser,  setSessionUser] = useState<SessionUser>({
-    username:      savedUsername,   // ← was propUsername (wrong)
-    profile_photo: savedPhoto,      // ← was propProfilePhoto ?? null (wrong)
+    username:      savedUsername,
+    profile_photo: savedPhoto,
   });
   const [loading,      setLoading]     = useState(true);
   const [error,        setError]       = useState<string | null>(null);
   const [searchQuery,  setSearchQuery] = useState("");
   const [userDropOpen, setUserDropOpen]= useState(false);
 
-  // resolvedPhoto stays the same
   const resolvedPhoto = cleanPhoto(sessionUser.profile_photo) ?? cleanPhoto(savedPhoto);
   const avatarSrc = resolvedPhoto
     ? `${UPLOADS}${resolvedPhoto}`
     : AVATAR_URL(sessionUser.username || savedUsername);
 
+  // ✅ Fixed fetch — gumagamit ng CapacitorHttp sa mobile
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetch(`${CI_BASE}/main/API_users`, { credentials: "include" })
-      .then(res => {
-        if (!res.ok) throw new Error(`Server error: ${res.status}`);
-        const ct = res.headers.get("content-type") ?? "";
-        if (!ct.includes("application/json")) throw new Error("Server returned HTML instead of JSON. Check the API URL.");
-        return res.json() as Promise<ApiResponse>;
-      })
-      .then(json => { if (json.status !== "success") throw new Error("API returned error status."); setInfo(json.data); })
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
+
+    const doFetch = async () => {
+      try {
+        let json: ApiResponse;
+
+        if (Capacitor.isNativePlatform()) {
+          const response = await CapacitorHttp.get({
+            url: `${CI_BASE}/main/API_users`,
+            headers: { "Accept": "application/json" },
+          });
+          json = response.data as ApiResponse;
+        } else {
+          const res = await fetch(`${CI_BASE}/main/API_users`, { credentials: "include" });
+          if (!res.ok) throw new Error(`Server error: ${res.status}`);
+          const ct = res.headers.get("content-type") ?? "";
+          if (!ct.includes("application/json")) throw new Error("Server returned HTML instead of JSON.");
+          json = await res.json() as ApiResponse;
+        }
+
+        if (json.status !== "success") throw new Error("API returned error status.");
+        setInfo(json.data);
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    doFetch();
   }, []);
 
   const q = searchQuery.toLowerCase().trim();
@@ -123,18 +142,8 @@ export default function Users({
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
         html,body,#root{height:100%;overflow:hidden}
         body{font-family:'DM Sans',sans-serif;background:#f8f9fc}
-
         #wrapper{display:flex;height:100vh;overflow:hidden}
-
-        #sidebar{
-          width:225px;min-width:225px;
-          background:linear-gradient(180deg,#4e73df 10%,#224abe 100%);
-          display:flex;flex-direction:column;
-          height:100vh;
-          position:fixed;top:0;left:0;
-          flex-shrink:0;
-          z-index:100;
-        }
+        #sidebar{width:225px;min-width:225px;background:linear-gradient(180deg,#4e73df 10%,#224abe 100%);display:flex;flex-direction:column;height:100vh;position:fixed;top:0;left:0;flex-shrink:0;z-index:100}
         .sidebar-brand{display:flex;align-items:center;gap:10px;padding:1.25rem 1rem;color:#fff;text-decoration:none}
         .sidebar-brand-icon{font-size:22px;transform:rotate(-15deg);display:inline-block}
         .sidebar-brand-text{font-size:17px;font-weight:700}
@@ -143,31 +152,12 @@ export default function Users({
         .sidebar-nav li a{display:flex;align-items:center;gap:10px;padding:12px 20px;color:rgba(255,255,255,0.75);font-size:13.5px;font-weight:500;text-decoration:none;transition:background 0.15s,color 0.15s}
         .sidebar-nav li a:hover,.sidebar-nav li.active a{background:rgba(255,255,255,0.12);color:#fff}
         .sidebar-nav li a i{width:18px;text-align:center;font-size:14px}
-
-        #content-wrapper{
-          margin-left:225px;
-          flex:1;
-          display:flex;
-          flex-direction:column;
-          height:100vh;
-          overflow-y:auto;
-          overflow-x:hidden;
-          scrollbar-width:thin;
-          scrollbar-color:#bfdbfe #f1f5f9;
-        }
+        #content-wrapper{margin-left:225px;flex:1;display:flex;flex-direction:column;height:100vh;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#bfdbfe #f1f5f9}
         #content-wrapper::-webkit-scrollbar{width:8px}
         #content-wrapper::-webkit-scrollbar-track{background:#f1f5f9}
         #content-wrapper::-webkit-scrollbar-thumb{background:#bfdbfe;border-radius:4px}
         #content-wrapper::-webkit-scrollbar-thumb:hover{background:#93c5fd}
-
-        #topbar{
-          height:65px;flex-shrink:0;
-          background:#fff;
-          box-shadow:0 2px 4px rgba(0,0,0,0.08);
-          display:flex;align-items:center;
-          padding:0 1.5rem;gap:1rem;
-          position:sticky;top:0;z-index:99;
-        }
+        #topbar{height:65px;flex-shrink:0;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,0.08);display:flex;align-items:center;padding:0 1.5rem;gap:1rem;position:sticky;top:0;z-index:99}
         .topbar-search{display:flex}
         .topbar-search input{border:1px solid #d1d3e2;border-right:none;border-radius:5px 0 0 5px;padding:7px 14px;font-size:13px;font-family:'DM Sans',sans-serif;background:#f8f9fc;color:#333;width:280px;outline:none}
         .topbar-search button{background:#4e73df;border:none;border-radius:0 5px 5px 0;padding:7px 14px;color:#fff;cursor:pointer}
@@ -179,9 +169,7 @@ export default function Users({
         .user-dropdown{position:absolute;top:calc(100% + 10px);right:0;background:#fff;border:1px solid #e3e6f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.1);min-width:160px;z-index:200}
         .user-dropdown a{display:flex;align-items:center;gap:8px;padding:10px 16px;font-size:13px;color:#555;text-decoration:none}
         .user-dropdown a:hover{background:#f8f9fc}
-
         #page-content{padding:1.5rem;flex:1}
-
         .ta-card-section{background:#fff;border-radius:16px;border:1.5px solid #bfdbfe;box-shadow:0 2px 8px rgba(26,86,219,0.07);overflow:hidden}
         .ta-card-header{background:#fff;border-bottom:1.5px solid #bfdbfe;padding:1rem 1.25rem;display:flex;align-items:center;gap:10px}
         .ta-section-title{font-family:'Playfair Display',serif;font-size:18px;color:#1a56db;margin:0;border-left:4px solid #1a56db;padding-left:12px}
@@ -213,8 +201,6 @@ export default function Users({
       `}</style>
 
       <div id="wrapper">
-
-        {/* SIDEBAR */}
         <div id="sidebar">
           <a className="sidebar-brand" href="/dashboard">
             <span className="sidebar-brand-icon"><i className="fas fa-laugh-wink"></i></span>
@@ -233,10 +219,7 @@ export default function Users({
           </ul>
         </div>
 
-        {/* CONTENT WRAPPER */}
         <div id="content-wrapper">
-
-          {/* Topbar */}
           <div id="topbar">
             <div className="topbar-search">
               <input
@@ -250,7 +233,6 @@ export default function Users({
             </div>
             <div className="topbar-right">
               <div className="topbar-divider" />
-              {/* ✅ FIXED: gumagamit na ng localStorage para sa username at avatar */}
               <div className="user-area" onClick={() => setUserDropOpen(o => !o)}>
                 <span>{sessionUser.username || savedUsername}</span>
                 <img
@@ -270,7 +252,6 @@ export default function Users({
             </div>
           </div>
 
-          {/* Page content */}
           <div id="page-content">
             <div className="ta-card-section">
               <div className="ta-card-header">
@@ -282,16 +263,13 @@ export default function Users({
                   </span>
                 )}
               </div>
-
               <div className="ta-card-body">
-
                 {loading && (
                   <div className="ta-loading">
                     <i className="fas fa-circle-notch"></i>
                     <p>Loading users...</p>
                   </div>
                 )}
-
                 {!loading && error && (
                   <div className="ta-error">
                     <i className="fas fa-exclamation-circle"></i>
@@ -301,21 +279,18 @@ export default function Users({
                     </button>
                   </div>
                 )}
-
                 {!loading && !error && info.length === 0 && (
                   <div className="ta-empty">
                     <i className="fas fa-users"></i>
                     <p>No data found.</p>
                   </div>
                 )}
-
                 {!loading && !error && info.length > 0 && filtered.length === 0 && (
                   <div className="ta-no-results">
                     <i className="fas fa-search"></i>
                     <p>No user found matching "<strong>{searchQuery}</strong>".</p>
                   </div>
                 )}
-
                 {!loading && !error && filtered.length > 0 && (
                   <table className="ta-table">
                     <thead>
@@ -342,11 +317,9 @@ export default function Users({
                     </tbody>
                   </table>
                 )}
-
               </div>
             </div>
           </div>
-
         </div>
       </div>
     </>

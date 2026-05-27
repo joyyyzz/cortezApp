@@ -1,8 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useHistory } from "react-router-dom";
+import { CapacitorHttp } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 
 // ─── API Base ─────────────────────────────────────────────────────────────────
-const API_BASE = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_favorite";
+const API_BASE         = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_favorite";
+const API_PROFILE_BASE = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_profile";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface FavoriteSpot {
@@ -27,6 +30,18 @@ interface ApiIndexResponse {
   favorites?: FavoriteSpot[];
   empty_message?: string;
   message?: string;
+}
+
+interface ApiProfileResponse {
+  status: string;
+  user_id: number | null;
+  username: string;
+  handle: string;
+  profile_photo: string | null;
+  fname: string | null;
+  mname: string | null;
+  lname: string | null;
+  address: string | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -97,7 +112,22 @@ function normalizeSpots(raw: FavoriteSpot[]): FavoriteSpot[] {
 
 // ─── API calls ────────────────────────────────────────────────────────────────
 async function apiFetch(path: string, options?: RequestInit): Promise<ApiIndexResponse> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const url = `${API_BASE}${path}`;
+
+  if (Capacitor.isNativePlatform()) {
+    const response = await CapacitorHttp.request({
+      url,
+      method: options?.method || "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+    });
+    if (response.status >= 400) throw new Error(`HTTP ${response.status}`);
+    return response.data as ApiIndexResponse;
+  }
+
+  const res = await fetch(url, {
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     ...options,
@@ -137,23 +167,31 @@ function Sidebar({ onNavigate }: { onNavigate: (path: string) => void }) {
       height: "100vh",
       zIndex: 100,
     }}>
-      <a href="#" onClick={e => { e.preventDefault(); onNavigate("/userdashboard"); }}
-        style={{ display: "flex", alignItems: "center", gap: 10, padding: "1.25rem 1rem", color: "#fff", textDecoration: "none" }}>
-        <span style={{ fontSize: 22, display: "inline-block", transform: "rotate(-15deg)" }}><i className="fas fa-laugh-wink" /></span>
+      <a
+        href="#"
+        onClick={e => { e.preventDefault(); onNavigate("/userdashboard"); }}
+        style={{ display: "flex", alignItems: "center", gap: 10, padding: "1.25rem 1rem", color: "#fff", textDecoration: "none" }}
+      >
+        <span style={{ fontSize: 22, display: "inline-block", transform: "rotate(-15deg)" }}>
+          <i className="fas fa-laugh-wink" />
+        </span>
         <span style={{ fontSize: 17, fontWeight: 700 }}><em><b>TOUR_</b></em>ISTA</span>
       </a>
       <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.15)", margin: "0 1rem" }} />
       <ul style={{ listStyle: "none", padding: 0, flex: 1 }}>
         {NAV_ITEMS.map(({ icon, label, path }) => (
           <li key={label}>
-            <a href="#" onClick={e => { e.preventDefault(); onNavigate(path); }}
+            <a
+              href="#"
+              onClick={e => { e.preventDefault(); onNavigate(path); }}
               style={{
                 display: "flex", alignItems: "center", gap: 10, padding: "12px 20px",
                 color: path === "/favorite" ? "#fff" : "rgba(255,255,255,0.75)",
                 fontSize: 13.5, fontWeight: 500, textDecoration: "none",
                 background: path === "/favorite" ? "rgba(255,255,255,0.12)" : "transparent",
                 transition: "background 0.15s, color 0.15s",
-              }}>
+              }}
+            >
               <i className={`fas fa-fw ${icon}`} style={{ width: 18, textAlign: "center", fontSize: 14 }} />
               <span>{label}</span>
             </a>
@@ -165,12 +203,27 @@ function Sidebar({ onNavigate }: { onNavigate: (path: string) => void }) {
 }
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
-function Topbar({ username, profilePhoto, onLogout, searchValue, onSearchChange }: {
-  username: string; profilePhoto?: string; onLogout: () => void;
-  searchValue: string; onSearchChange: (v: string) => void;
+function Topbar({
+  username,
+  avatarSrc,
+  onLogout,
+  searchValue,
+  onSearchChange,
+}: {
+  username: string;
+  avatarSrc: string | null;
+  onLogout: () => void;
+  searchValue: string;
+  onSearchChange: (v: string) => void;
 }) {
   const [dropOpen, setDropOpen] = useState(false);
-  const dropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dropOpen) return;
+    const handler = () => setDropOpen(false);
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [dropOpen]);
 
   return (
     <nav style={{
@@ -179,37 +232,71 @@ function Topbar({ username, profilePhoto, onLogout, searchValue, onSearchChange 
       boxShadow: "0 2px 4px rgba(0,0,0,0.08)",
       display: "flex", alignItems: "center",
       padding: "0 1.5rem", gap: "1rem",
-      // ── KEY CHANGE: sticky sa loob ng scrollable content-wrapper ──
       position: "sticky", top: 0, zIndex: 99,
       flexShrink: 0,
     }}>
+      {/* Search */}
       <div style={{ display: "flex" }}>
         <input
-          type="text" placeholder="Search favorite spot..." value={searchValue}
+          type="text"
+          placeholder="Search favorite spot..."
+          value={searchValue}
           onChange={e => onSearchChange(e.target.value)}
           onKeyDown={e => { if (e.key === "Escape") onSearchChange(""); }}
-          style={{ border: "1px solid #d1d3e2", borderRight: "none", borderRadius: "5px 0 0 5px", padding: "7px 14px", fontSize: 13, fontFamily: "'DM Sans', sans-serif", background: "#f8f9fc", color: "#333", width: 280, outline: "none" }}
+          style={{
+            border: "1px solid #d1d3e2", borderRight: "none",
+            borderRadius: "5px 0 0 5px", padding: "7px 14px",
+            fontSize: 13, fontFamily: "'DM Sans', sans-serif",
+            background: "#f8f9fc", color: "#333", width: 280, outline: "none",
+          }}
         />
         <button style={{ background: "#4e73df", border: "none", borderRadius: "0 5px 5px 0", padding: "7px 14px", color: "#fff", cursor: "pointer" }}>
           <i className="fas fa-search fa-sm" />
         </button>
       </div>
+
+      {/* Right side */}
       <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginLeft: "auto" }}>
         <div style={{ borderLeft: "1px solid #e3e6f0", height: 36 }} />
-        <div ref={dropRef} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", position: "relative" }} onClick={() => setDropOpen(o => !o)}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "#6e707e" }}><b>{username}</b></span>
-          {profilePhoto ? (
-            <img src={profilePhoto} alt="avatar" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
+
+        {/* User area — matches ProfilePage topbar exactly */}
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", position: "relative" }}
+          onClick={e => { e.stopPropagation(); setDropOpen(o => !o); }}
+        >
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>
+            {username || "..."}
+          </span>
+
+          {avatarSrc ? (
+            <img
+              src={avatarSrc}
+              alt="avatar"
+              style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }}
+            />
           ) : (
-            <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#eff6ff", border: "2px solid #bfdbfe", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: "50%",
+              background: "#eff6ff", border: "2px solid #bfdbfe",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
               <i className="fas fa-user" style={{ color: "#1a56db", fontSize: 14 }} />
             </div>
           )}
+
           {dropOpen && (
-            <div style={{ position: "absolute", top: "calc(100% + 10px)", right: 0, background: "#fff", border: "1px solid #e3e6f0", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.1)", minWidth: 160, zIndex: 200 }}>
-              <a href="#" onClick={e => { e.preventDefault(); onLogout(); }}
-                style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", fontSize: 13, color: "#555", textDecoration: "none" }}>
-                <i className="fas fa-sign-out-alt fa-sm fa-fw" style={{ color: "#aaa" }} />&nbsp;Logout
+            <div style={{
+              position: "absolute", top: "calc(100% + 10px)", right: 0,
+              background: "#fff", border: "1px solid #e3e6f0",
+              borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.1)",
+              minWidth: 160, zIndex: 200,
+            }}>
+              <a
+                href="#logout"
+                onClick={e => { e.preventDefault(); onLogout(); }}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", fontSize: 13, color: "#555", textDecoration: "none" }}
+              >
+                <i className="fas fa-sign-out-alt fa-sm fa-fw" style={{ color: "#aaa" }} /> Logout
               </a>
             </div>
           )}
@@ -223,15 +310,28 @@ function Topbar({ username, profilePhoto, onLogout, searchValue, onSearchChange 
 function RemoveConfirmModal({ spotName, onCancel, onConfirm }: { spotName: string; onCancel: () => void; onConfirm: () => void }) {
   return (
     <>
-      <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1040 }} />
+      <div
+        onClick={onCancel}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1040 }}
+      />
       <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 1050, width: "min(92vw,400px)" }}>
         <div style={{ background: "#fff", borderRadius: 16, border: "1.5px solid #bfdbfe", boxShadow: "0 2px 8px rgba(26,86,219,0.07)", padding: "2rem 1.5rem", textAlign: "center", fontFamily: "'DM Sans', sans-serif" }}>
           <div style={{ fontSize: 42, color: "#e53e3e", marginBottom: 10 }}><i className="fas fa-heart-broken" /></div>
           <h5 style={{ fontFamily: "'Playfair Display', serif", color: "#1a56db", fontSize: 20, marginBottom: 8 }}>Remove from favorites?</h5>
           <p style={{ color: "#475569", fontSize: 13, marginBottom: 24 }}><b>{spotName}</b> will be removed from your favorites list.</p>
           <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-            <button onClick={onConfirm} style={{ background: "#1a56db", border: "none", color: "#fff", borderRadius: 8, padding: "8px 22px", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>Yes, Remove it!</button>
-            <button onClick={onCancel} style={{ background: "#fff", border: "1.5px solid #bfdbfe", color: "#6b8ab8", borderRadius: 8, padding: "8px 22px", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>Cancel</button>
+            <button
+              onClick={onConfirm}
+              style={{ background: "#1a56db", border: "none", color: "#fff", borderRadius: 8, padding: "8px 22px", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}
+            >
+              Yes, Remove it!
+            </button>
+            <button
+              onClick={onCancel}
+              style={{ background: "#fff", border: "1.5px solid #bfdbfe", color: "#6b8ab8", borderRadius: 8, padding: "8px 22px", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       </div>
@@ -242,7 +342,17 @@ function RemoveConfirmModal({ spotName, onCancel, onConfirm }: { spotName: strin
 // ─── Remove Toast ─────────────────────────────────────────────────────────────
 function RemoveToast({ spotName, visible, onClose }: { spotName: string; visible: boolean; onClose: () => void }) {
   return (
-    <div style={{ position: "fixed", bottom: 30, right: 30, zIndex: 9999, minWidth: 280, background: "#fff", border: "1.5px solid #bfdbfe", borderRadius: 14, boxShadow: "0 8px 32px rgba(26,86,219,0.16)", padding: "14px 20px", display: "flex", alignItems: "center", gap: 12, fontFamily: "'DM Sans', sans-serif", opacity: visible ? 1 : 0, transform: visible ? "translateY(0)" : "translateY(20px)", transition: "opacity 0.3s ease, transform 0.3s ease", pointerEvents: visible ? "auto" : "none" }}>
+    <div style={{
+      position: "fixed", bottom: 30, right: 30, zIndex: 9999, minWidth: 280,
+      background: "#fff", border: "1.5px solid #bfdbfe", borderRadius: 14,
+      boxShadow: "0 8px 32px rgba(26,86,219,0.16)", padding: "14px 20px",
+      display: "flex", alignItems: "center", gap: 12,
+      fontFamily: "'DM Sans', sans-serif",
+      opacity: visible ? 1 : 0,
+      transform: visible ? "translateY(0)" : "translateY(20px)",
+      transition: "opacity 0.3s ease, transform 0.3s ease",
+      pointerEvents: visible ? "auto" : "none",
+    }}>
       <div style={{ width: 38, height: 38, borderRadius: 10, background: "#fff0f0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         <i className="fas fa-heart-broken" style={{ color: "#e53e3e", fontSize: 17 }} />
       </div>
@@ -262,7 +372,19 @@ function CategoryPills({ active, onChange }: { active: Category; onChange: (c: C
       {CATEGORIES.map(cat => {
         const isActive = cat === active;
         return (
-          <button key={cat} onClick={() => onChange(cat)} style={{ border: `1.5px solid ${isActive ? "#1a56db" : "#bfdbfe"}`, background: isActive ? "#1a56db" : "#fff", color: isActive ? "#fff" : "#1e3a8a", borderRadius: 20, padding: "6px 16px", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", transition: "background 0.15s, border-color 0.15s, color 0.15s", whiteSpace: "nowrap" }}>
+          <button
+            key={cat}
+            onClick={() => onChange(cat)}
+            style={{
+              border: `1.5px solid ${isActive ? "#1a56db" : "#bfdbfe"}`,
+              background: isActive ? "#1a56db" : "#fff",
+              color: isActive ? "#fff" : "#1e3a8a",
+              borderRadius: 20, padding: "6px 16px", fontSize: 13, fontWeight: 500,
+              cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+              transition: "background 0.15s, border-color 0.15s, color 0.15s",
+              whiteSpace: "nowrap",
+            }}
+          >
             {cat === "all" ? "All" : cat}
           </button>
         );
@@ -347,17 +469,19 @@ export default function Favorite() {
 
   const [userId] = useState<string | null>(() => getStoredUserId());
 
-  const [spots, setSpots]                   = useState<FavoriteSpot[]>([]);
-  const [username, setUsername]             = useState("User");
-  const [loading, setLoading]               = useState(true);
-  const [error, setError]                   = useState<string | null>(null);
+  const [spots,          setSpots]          = useState<FavoriteSpot[]>([]);
+  const [username,       setUsername]       = useState("User");
+  const [avatarSrc,      setAvatarSrc]      = useState<string | null>(null);   // ← NEW
+  const [loading,        setLoading]        = useState(true);
+  const [error,          setError]          = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<Category>("all");
-  const [searchQuery, setSearchQuery]       = useState("");
-  const [removeTarget, setRemoveTarget]     = useState<FavoriteSpot | null>(null);
-  const [removing, setRemoving]             = useState(false);
-  const [toast, setToast]                   = useState({ visible: false, spotName: "" });
+  const [searchQuery,    setSearchQuery]    = useState("");
+  const [removeTarget,   setRemoveTarget]   = useState<FavoriteSpot | null>(null);
+  const [removing,       setRemoving]       = useState(false);
+  const [toast,          setToast]          = useState({ visible: false, spotName: "" });
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Fetch favorites ──────────────────────────────────────────────────────────
   const fetchFavorites = useCallback(async (search = "", category = "") => {
     setLoading(true);
     setError(null);
@@ -365,12 +489,37 @@ export default function Favorite() {
       const data = await apiGetFavorites(userId, search, category);
       const rawSpots = data.favorite_spots ?? data.favorites ?? [];
       setSpots(normalizeSpots(rawSpots));
-      if (data.username) setUsername(data.username);
+      // Only use username from favorites API as a fallback
+      if (data.username && username === "User") setUsername(data.username);
     } catch (e: any) {
       setError("Failed to load favorites. " + (e?.message ?? "Please try again."));
     } finally {
       setLoading(false);
     }
+  }, [userId]);
+
+  // ── Fetch profile (username + avatar) — mirrors ProfilePage.tsx exactly ──────
+  useEffect(() => {
+    const fetchProfile = async () => {
+      const storedUid = userId || localStorage.getItem("user_id") || "";
+      if (!storedUid) return;
+      try {
+        const res = await fetch(
+          `${API_PROFILE_BASE}?user_id=${storedUid}`,
+          { method: "GET", credentials: "include" }
+        );
+        if (!res.ok) return;
+        const text = await res.text();
+        let data: ApiProfileResponse;
+        try { data = JSON.parse(text); }
+        catch { return; }
+        if (data.status === "success") {
+          if (data.username) setUsername(data.username);
+          if (data.profile_photo) setAvatarSrc(data.profile_photo);
+        }
+      } catch {}
+    };
+    fetchProfile();
   }, [userId]);
 
   useEffect(() => { fetchFavorites(); }, [fetchFavorites]);
@@ -379,12 +528,13 @@ export default function Favorite() {
     console.log("[Favorite] resolved user_id:", userId);
     if (!userId) {
       console.warn("[Favorite] No user_id found in localStorage/sessionStorage. Keys available:", {
-        local: Object.keys(localStorage),
+        local:   Object.keys(localStorage),
         session: Object.keys(sessionStorage),
       });
     }
   }, [userId]);
 
+  // ── Filtered spots ───────────────────────────────────────────────────────────
   const q = searchQuery.toLowerCase().trim();
   const filtered = spots.filter(s => {
     const matchesCat    = activeCategory === "all" || s.category === activeCategory;
@@ -393,6 +543,7 @@ export default function Favorite() {
     return matchesCat && matchesSearch;
   });
 
+  // ── Remove handler ───────────────────────────────────────────────────────────
   const handleConfirmRemove = useCallback(async () => {
     if (!removeTarget || removing) return;
     const spot = removeTarget;
@@ -403,7 +554,7 @@ export default function Favorite() {
       await apiRemoveFavorite(spot.spot_id, userId);
     } catch (e: any) {
       setSpots(prev => [spot, ...prev]);
-      setError("Could not remove \"" + spot.spot_name + "\". " + (e?.message ?? "Please try again."));
+      setError(`Could not remove "${spot.spot_name}". ` + (e?.message ?? "Please try again."));
       setRemoving(false);
       return;
     }
@@ -413,6 +564,7 @@ export default function Favorite() {
     toastTimerRef.current = setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000);
   }, [removeTarget, removing, userId]);
 
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <>
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
@@ -423,10 +575,8 @@ export default function Favorite() {
         html, body, #root { height:100%; overflow:hidden; }
         body { font-family:'DM Sans',sans-serif; background:#f8f9fc; }
 
-        /* ── Layout shell ── */
         #fav-wrapper { display:flex; height:100vh; overflow:hidden; }
 
-        /* ── Content wrapper: offset sidebar, fills height, scrolls ── */
         #fav-content-wrapper {
           margin-left:225px;
           flex:1;
@@ -435,13 +585,9 @@ export default function Favorite() {
           height:100vh;
           overflow-y:auto;
           overflow-x:hidden;
-
-          /* Blue scrollbar — same as ProfileAdmin */
           scrollbar-width:thin;
           scrollbar-color:#bfdbfe #f1f5f9;
         }
-
-        /* Webkit blue scrollbar */
         #fav-content-wrapper::-webkit-scrollbar { width:8px; }
         #fav-content-wrapper::-webkit-scrollbar-track { background:#f1f5f9; }
         #fav-content-wrapper::-webkit-scrollbar-thumb { background:#bfdbfe; border-radius:4px; }
@@ -458,7 +604,12 @@ export default function Favorite() {
         .fav-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:1.5rem; }
       `}</style>
 
-      <RemoveToast spotName={toast.spotName} visible={toast.visible} onClose={() => setToast(t => ({ ...t, visible: false }))} />
+      <RemoveToast
+        spotName={toast.spotName}
+        visible={toast.visible}
+        onClose={() => setToast(t => ({ ...t, visible: false }))}
+      />
+
       {removeTarget && (
         <RemoveConfirmModal
           spotName={removeTarget.spot_name}
@@ -467,24 +618,21 @@ export default function Favorite() {
         />
       )}
 
-      {/* ── WRAPPER: fixed height, no overflow ── */}
       <div id="fav-wrapper">
-
-        {/* ── SIDEBAR: fixed, never scrolls ── */}
         <Sidebar onNavigate={handleNavigate} />
 
-        {/* ── CONTENT WRAPPER: scrollable, offset by sidebar width ── */}
         <div id="fav-content-wrapper">
 
-          {/* Topbar — sticky sa loob ng fav-content-wrapper */}
+          {/* ── Topbar: now passes avatarSrc from API_profile ── */}
           <Topbar
             username={username}
+            avatarSrc={avatarSrc}
             onLogout={handleLogout}
             searchValue={searchQuery}
             onSearchChange={setSearchQuery}
           />
 
-          {/* Page content */}
+          {/* ── Page content ── */}
           <div style={{ padding: "1.5rem", flex: 1, fontFamily: "'DM Sans', sans-serif" }}>
 
             {!userId && !loading && (
@@ -494,6 +642,7 @@ export default function Favorite() {
               </div>
             )}
 
+            {/* Stats card */}
             <div style={{ background: "#fff", borderRadius: 16, padding: "1.1rem 1.5rem", display: "inline-flex", alignItems: "center", gap: "1rem", border: "1.5px solid #bfdbfe", marginBottom: "2rem", boxShadow: "0 2px 8px rgba(26,86,219,0.07)" }}>
               <div style={{ width: 44, height: 44, borderRadius: 12, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <i className="fas fa-heart" style={{ color: "#1a56db", fontSize: 20 }} />
@@ -506,13 +655,21 @@ export default function Favorite() {
               </div>
             </div>
 
+            {/* Main card */}
             <div style={{ background: "#fff", borderRadius: 16, border: "1.5px solid #bfdbfe", boxShadow: "0 2px 8px rgba(26,86,219,0.07)", overflow: "hidden" }}>
               <div style={{ padding: "1rem 1.25rem", borderBottom: "1.5px solid #bfdbfe" }}>
-                <h6 style={{ margin: 0, fontFamily: "'Playfair Display', serif", fontSize: 22, color: "#1a56db", borderLeft: "4px solid #1a56db", paddingLeft: 12 }}>Favorite Spots</h6>
+                <h6 style={{ margin: 0, fontFamily: "'Playfair Display', serif", fontSize: 22, color: "#1a56db", borderLeft: "4px solid #1a56db", paddingLeft: 12 }}>
+                  Favorite Spots
+                </h6>
               </div>
               <div style={{ padding: "1.25rem" }}>
 
-                {error && <ErrorBanner message={error} onRetry={() => fetchFavorites(searchQuery, activeCategory !== "all" ? activeCategory : "")} />}
+                {error && (
+                  <ErrorBanner
+                    message={error}
+                    onRetry={() => fetchFavorites(searchQuery, activeCategory !== "all" ? activeCategory : "")}
+                  />
+                )}
 
                 {loading ? (
                   <LoadingSkeleton />
@@ -527,7 +684,9 @@ export default function Favorite() {
                     {filtered.length === 0 ? (
                       <div style={{ textAlign: "center", padding: "2.5rem 1rem", color: "#6b8ab8" }}>
                         <i className="fas fa-search" style={{ fontSize: 36, color: "#bfdbfe", display: "block", marginBottom: "0.75rem" }} />
-                        <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>No favorite spots found for &ldquo;{q || activeCategory}&rdquo;.</p>
+                        <p style={{ fontSize: 13, color: "#94a3b8", margin: 0 }}>
+                          No favorite spots found for &ldquo;{q || activeCategory}&rdquo;.
+                        </p>
                       </div>
                     ) : (
                       <div className="fav-grid">

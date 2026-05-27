@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useHistory } from "react-router-dom";
 
 // ─── Base URL ─────────────────────────────────────────────────────────────────
-const API_BASE = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_map";
+const API_BASE    = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_map";
+const API_PROFILE = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_profile";
 
 // ─── API availability flag ────────────────────────────────────────────────────
 const _api = { available: true };
@@ -60,10 +61,6 @@ async function apiGeocodeBatch(items: { spot_id: number; address: string }[]) {
 
 async function apiSearch(keyword: string) {
   return _safeFetch(`${API_BASE}/search?keyword=${encodeURIComponent(keyword)}`);
-}
-
-async function apiGetProfile() {
-  return _safeFetch(`${API_BASE}/profile`);
 }
 
 async function apiGetCategories() {
@@ -144,6 +141,138 @@ function Sidebar({ onNavigate }: { onNavigate: (path: string) => void }) {
   );
 }
 
+// ─── TopbarNav ────────────────────────────────────────────────────────────────
+function TopbarNav({
+  searchQuery,
+  onSearchChange,
+  onSearchSubmit,
+  searchResults,
+  showSearchDrop,
+  onPickResult,
+  username: propUsername,
+  profilePhoto: propPhoto,
+  onLogout,
+}: {
+  searchQuery:     string;
+  onSearchChange:  (v: string) => void;
+  onSearchSubmit?: (e: React.FormEvent) => void;
+  searchResults?:  SearchResult[];
+  showSearchDrop?: boolean;
+  onPickResult?:   (r: SearchResult) => void;
+  username?:       string;
+  profilePhoto?:   string;
+  onLogout:        () => void;
+}) {
+  const [dropOpen,  setDropOpen]  = useState(false);
+  const [username,  setUsername]  = useState(propUsername ?? "");
+  const [photo,     setPhoto]     = useState(propPhoto ?? "");
+
+  // Fetch profile from API_profile if not passed as props
+  useEffect(() => {
+    if (propUsername && propPhoto) return;
+    const uid = localStorage.getItem("user_id") ?? "";
+    fetch(`${API_PROFILE}?user_id=${uid}`, { credentials: "include" })
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === "success") {
+          setUsername(data.username ?? "");
+          setPhoto(data.profile_photo ?? "");
+        }
+      })
+      .catch(() => {});
+  }, [propUsername, propPhoto]);
+
+  // Sync if parent updates props later
+  useEffect(() => { if (propUsername) setUsername(propUsername); }, [propUsername]);
+  useEffect(() => { if (propPhoto)    setPhoto(propPhoto);       }, [propPhoto]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!dropOpen) return;
+    const handler = () => setDropOpen(false);
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [dropOpen]);
+
+  return (
+    <div id="topbar">
+      {/* Search */}
+      <div className="topbar-search-wrap">
+        <form onSubmit={onSearchSubmit} style={{ display: "flex" }}>
+          <input
+            type="text"
+            placeholder="Search tourist spot..."
+            value={searchQuery}
+            onChange={e => onSearchChange(e.target.value)}
+            onBlur={() => setTimeout(() => onPickResult && null, 150)}
+            autoComplete="off"
+          />
+          <button type="submit">
+            <i className="fas fa-search fa-sm" />
+          </button>
+        </form>
+
+        {/* Search dropdown */}
+        {showSearchDrop && searchResults && (
+          <div className="search-dropdown">
+            {searchResults.length === 0
+              ? <div className="search-no-result">No spots found.</div>
+              : searchResults.map(result => (
+                  <div
+                    key={result.spot_id}
+                    className="search-item"
+                    onMouseDown={() => onPickResult?.(result)}
+                  >
+                    {result.image_url
+                      ? <img src={result.image_url} alt={result.spot_name} onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                      : <div className="search-item-no-img"><i className="fas fa-map-marker-alt" /></div>
+                    }
+                    <div className="search-text">
+                      <div className="search-name">{result.spot_name}</div>
+                      <div className="search-location">{result.location}</div>
+                    </div>
+                  </div>
+                ))
+            }
+          </div>
+        )}
+      </div>
+
+      {/* Right side: divider + user */}
+      <div className="topbar-right">
+        <div className="topbar-divider" />
+        <div
+          className="user-area"
+          onClick={e => { e.stopPropagation(); setDropOpen(o => !o); }}
+        >
+          <span><b>{username || "..."}</b></span>
+
+          {photo
+            ? <img src={photo} alt="avatar" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
+            : (
+              <div style={{
+                width: 32, height: 32, borderRadius: "50%",
+                background: "#eff6ff", border: "2px solid #bfdbfe",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <i className="fas fa-user" style={{ color: "#1a56db", fontSize: 14 }} />
+              </div>
+            )
+          }
+
+          {dropOpen && (
+            <div className="user-dropdown">
+              <a href="#" onClick={e => { e.preventDefault(); onLogout(); }}>
+                <i className="fas fa-sign-out-alt fa-sm fa-fw" style={{ color: "#aaa" }} /> Logout
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MapPage ──────────────────────────────────────────────────────────────────
 export default function MapPage({
   spots:         propSpots,
@@ -157,9 +286,6 @@ export default function MapPage({
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [spots,          setSpots]          = useState<TouristSpot[]>(propSpots ?? []);
-  const [username,       setUsername]       = useState(propUsername ?? "");
-  const [profilePhoto,   setProfilePhoto]   = useState(propPhoto ?? "");
-  const [userDropOpen,   setUserDropOpen]   = useState(false);
   const [searchQuery,    setSearchQuery]    = useState("");
   const [searchResults,  setSearchResults]  = useState<SearchResult[]>([]);
   const [showSearchDrop, setShowSearchDrop] = useState(false);
@@ -176,19 +302,8 @@ export default function MapPage({
 
   useEffect(() => { spotsRef.current = spots; }, [spots]);
 
-  // ── Boot: fetch profile + spots ────────────────────────────────────────────
+  // ── Boot: fetch spots ──────────────────────────────────────────────────────
   useEffect(() => {
-    if (!propUsername) {
-      apiGetProfile().then(data => {
-        if (data?.status === "success") {
-          setUsername(data.user?.username ?? "");
-          setProfilePhoto(data.user?.profile_photo ?? "");
-          setApiStatus("live");
-        } else {
-          setApiStatus("offline");
-        }
-      });
-    }
     if (!propSpots) {
       setLoadingSpots(true);
       apiGetSpots().then(data => {
@@ -254,16 +369,21 @@ export default function MapPage({
       shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
       iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
     });
+
     function buildPopup(spot: TouristSpot) {
       const imgSrc = spot.image_url || spot.spot_image || "";
-      const imgTag = imgSrc ? `<img src="${imgSrc}" alt="${spot.spot_name}" style="width:100%;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;">` : "";
+      const imgTag = imgSrc
+        ? `<img src="${imgSrc}" alt="${spot.spot_name}" style="width:100%;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;">`
+        : "";
       return `<div style="font-family:'DM Sans',sans-serif;min-width:180px;max-width:220px;">${imgTag}<strong style="color:#1e3a8a;font-size:14px;">${spot.spot_name}</strong><br><span style="color:#6b8ab8;font-size:12px;">📍 ${spot.location}</span>${spot.category ? `<br><span style="font-size:11px;color:#94a3b8;">${spot.category}</span>` : ""}</div>`;
     }
+
     function addMarker(spot: TouristSpot, lat: number, lng: number) {
       const marker = L.marker([lat, lng], { icon: blueIcon }).addTo(map).bindPopup(buildPopup(spot));
       markersRef.current.push(marker);
       (marker as any)._spot_id = spot.spot_id;
     }
+
     const needsGeocode: TouristSpot[] = [];
     spots.forEach(spot => {
       const lat = spot.lat;
@@ -271,7 +391,9 @@ export default function MapPage({
       if (lat != null && lng != null) addMarker(spot, lat, lng);
       else needsGeocode.push(spot);
     });
+
     if (needsGeocode.length === 0) return;
+
     if (_api.available) {
       apiGeocodeBatch(needsGeocode.map(s => ({ spot_id: s.spot_id, address: s.location }))).then(results => {
         if (results) {
@@ -327,7 +449,13 @@ export default function MapPage({
         const kw = val.toLowerCase();
         results = spotsRef.current
           .filter(s => s.spot_name.toLowerCase().includes(kw) || s.location.toLowerCase().includes(kw))
-          .map(s => ({ spot_id: s.spot_id, spot_name: s.spot_name, location: s.location, category: s.category ?? "Other", image_url: s.image_url ?? s.spot_image ?? "" }));
+          .map(s => ({
+            spot_id:   s.spot_id,
+            spot_name: s.spot_name,
+            location:  s.location,
+            category:  s.category ?? "Other",
+            image_url: s.image_url ?? s.spot_image ?? "",
+          }));
       }
       setSearchResults(results);
       setShowSearchDrop(true);
@@ -354,11 +482,13 @@ export default function MapPage({
         return;
       }
     }
-    const geo = _api.available ? await apiGeocode(result.location, result.spot_id) : await nominatimGeocode(result.location);
+    const geo = _api.available
+      ? await apiGeocode(result.location, result.spot_id)
+      : await nominatimGeocode(result.location);
     if (geo) map.flyTo([geo.lat, geo.lng], 14, { animate: true, duration: 1.2 });
   }, []);
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <>
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
@@ -366,15 +496,11 @@ export default function MapPage({
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap');
 
         *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
-
-        /* ── Match ProfileAdmin: lock html/body/root to viewport ── */
         html,body,#root { height:100%; overflow:hidden; }
         body { font-family:'DM Sans',sans-serif; background:#f8f9fc; }
 
-        /* ── Layout shell ── */
         #wrapper { display:flex; height:100vh; overflow:hidden; }
 
-        /* ── Sidebar: fixed, full height, never scrolls ── */
         #sidebar {
           width:225px; min-width:225px;
           background:linear-gradient(180deg,#4e73df 10%,#224abe 100%);
@@ -394,7 +520,6 @@ export default function MapPage({
         .sidebar-nav li a:hover,.sidebar-nav li.active a { background:rgba(255,255,255,0.12); color:#fff; }
         .sidebar-nav li a i { width:18px; text-align:center; font-size:14px; }
 
-        /* ── Content wrapper: offset sidebar, fills height, scrolls ── */
         #content-wrapper {
           margin-left:225px;
           flex:1;
@@ -403,26 +528,22 @@ export default function MapPage({
           height:100vh;
           overflow-y:auto;
           overflow-x:hidden;
-
-          /* Blue scrollbar — same as ProfileAdmin */
           scrollbar-width:thin;
           scrollbar-color:#bfdbfe #f1f5f9;
         }
-
-        /* Webkit blue scrollbar */
         #content-wrapper::-webkit-scrollbar { width:8px; }
         #content-wrapper::-webkit-scrollbar-track { background:#f1f5f9; }
         #content-wrapper::-webkit-scrollbar-thumb { background:#bfdbfe; border-radius:4px; }
         #content-wrapper::-webkit-scrollbar-thumb:hover { background:#93c5fd; }
 
-        /* ── Topbar: sticky at top of content-wrapper ── */
         #topbar {
           height:65px; flex-shrink:0;
           background:#fff; box-shadow:0 2px 4px rgba(0,0,0,.08);
           display:flex; align-items:center; padding:0 1.5rem; gap:1rem;
           position:sticky; top:0; z-index:99;
         }
-        .topbar-search-wrap { position:relative; display:flex; }
+        .topbar-search-wrap { position:relative; display:flex; flex-direction:column; }
+        .topbar-search-wrap form { display:flex; }
         .topbar-search-wrap input {
           border:1px solid #d1d3e2; border-right:none; border-radius:5px 0 0 5px;
           padding:7px 14px; font-size:13px; font-family:'DM Sans',sans-serif;
@@ -430,7 +551,6 @@ export default function MapPage({
         }
         .topbar-search-wrap button { background:#4e73df; border:none; border-radius:0 5px 5px 0; padding:7px 14px; color:#fff; cursor:pointer; }
 
-        /* ── Search dropdown ── */
         .search-dropdown {
           position:absolute; top:100%; left:0; background:#fff;
           width:340px; z-index:1000; border:1px solid #ddd; border-radius:5px;
@@ -446,7 +566,6 @@ export default function MapPage({
         .search-location { font-size:12px; color:gray; }
         .search-no-result { padding:12px 16px; font-size:13px; color:#94a3b8; text-align:center; }
 
-        /* ── Topbar right ── */
         .topbar-right { display:flex; align-items:center; gap:1rem; margin-left:auto; }
         .topbar-divider { border-left:1px solid #e3e6f0; height:36px; }
         .user-area { display:flex; align-items:center; gap:8px; cursor:pointer; position:relative; }
@@ -460,7 +579,6 @@ export default function MapPage({
         .user-dropdown a { display:flex; align-items:center; gap:8px; padding:10px 16px; font-size:13px; color:#555; text-decoration:none; }
         .user-dropdown a:hover { background:#f8f9fc; }
 
-        /* ── Page content ── */
         #page-content { padding:1.5rem; flex:1; }
         .ta-card-section { background:#fff; border-radius:16px; border:1.5px solid #bfdbfe; box-shadow:0 2px 8px rgba(26,86,219,.07); overflow:hidden; }
         .ta-card-header { background:#fff; border-bottom:1.5px solid #bfdbfe; padding:1rem 1.25rem; display:flex; align-items:center; gap:10px; }
@@ -468,13 +586,11 @@ export default function MapPage({
         .ta-card-body { padding:1.25rem; background:#fff; }
         .ta-badge { background:#eff6ff; border:1px solid #bfdbfe; color:#1a56db; border-radius:20px; padding:3px 12px; font-size:12px; font-weight:500; margin-left:auto; }
 
-        /* ── Map ── */
         #map { height:600px; width:100%; border-radius:12px; border:1.5px solid #bfdbfe; overflow:hidden; }
         .map-loading-overlay { height:600px; width:100%; border-radius:12px; border:1.5px solid #bfdbfe; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:#f8faff; color:#6b8ab8; font-size:14px; }
         .map-loading-overlay i { font-size:28px; color:#bfdbfe; animation:spin 1.2s linear infinite; }
         @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
 
-        /* ── API status badge ── */
         .api-badge { position:fixed; bottom:14px; left:240px; z-index:999; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; display:flex; align-items:center; gap:5px; }
         .api-badge.live     { background:#dcfce7; color:#166534; border:1px solid #86efac; }
         .api-badge.offline  { background:#fef9c3; color:#854d0e; border:1px solid #fde047; }
@@ -492,66 +608,19 @@ export default function MapPage({
       <div id="wrapper">
         <Sidebar onNavigate={handleNavigate} />
 
-        {/* ── CONTENT WRAPPER (scrollable, blue scrollbar) ── */}
         <div id="content-wrapper">
 
-          {/* ── Topbar ── */}
-          <div id="topbar">
-            <div className="topbar-search-wrap">
-              <input
-                type="text"
-                placeholder="Search tourist spot..."
-                value={searchQuery}
-                onChange={e => handleSearchInput(e.target.value)}
-                onBlur={() => setTimeout(() => setShowSearchDrop(false), 150)}
-                autoComplete="off"
-              />
-              <button onClick={() => { if (searchQuery.trim()) handleSearchInput(searchQuery); }}>
-                <i className="fas fa-search fa-sm" />
-              </button>
-              {showSearchDrop && (
-                <div className="search-dropdown">
-                  {searchResults.length === 0
-                    ? <div className="search-no-result">No spots found.</div>
-                    : searchResults.map(result => (
-                        <div key={result.spot_id} className="search-item" onMouseDown={() => handlePickResult(result)}>
-                          {result.image_url
-                            ? <img src={result.image_url} alt={result.spot_name} onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-                            : <div className="search-item-no-img"><i className="fas fa-map-marker-alt" /></div>
-                          }
-                          <div className="search-text">
-                            <div className="search-name">{result.spot_name}</div>
-                            <div className="search-location">{result.location}</div>
-                          </div>
-                        </div>
-                      ))
-                  }
-                </div>
-              )}
-            </div>
-
-            <div className="topbar-right">
-              <div className="topbar-divider" />
-              <div className="user-area" onClick={() => setUserDropOpen(o => !o)}>
-                <span><b>{username}</b></span>
-                {profilePhoto
-                  ? <img src={profilePhoto} alt="avatar" />
-                  : (
-                    <div style={{ width:32, height:32, borderRadius:"50%", background:"#eff6ff", border:"2px solid #bfdbfe", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                      <i className="fas fa-user" style={{ color:"#1a56db", fontSize:14 }} />
-                    </div>
-                  )
-                }
-                {userDropOpen && (
-                  <div className="user-dropdown">
-                    <a href="#" onClick={e => { e.preventDefault(); handleLogout(); }}>
-                      <i className="fas fa-sign-out-alt fa-sm fa-fw" style={{ color:"#aaa" }} /> Logout
-                    </a>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          {/* ── Topbar (shared component, fetches its own profile) ── */}
+          <TopbarNav
+            searchQuery={searchQuery}
+            onSearchChange={handleSearchInput}
+            searchResults={searchResults}
+            showSearchDrop={showSearchDrop}
+            onPickResult={handlePickResult}
+            username={propUsername}
+            profilePhoto={propPhoto}
+            onLogout={handleLogout}
+          />
 
           {/* ── Page Content ── */}
           <div id="page-content">
@@ -590,6 +659,5 @@ export {
   apiGeocode,
   apiGeocodeBatch,
   apiSearch,
-  apiGetProfile,
   apiGetCategories,
 };

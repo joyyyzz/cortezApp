@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useHistory } from "react-router-dom";
+import { CapacitorHttp } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BASE_UPLOADS         = "https://itservicesph.com/IT383/CORTEZ/Cortez/uploads/profile/";
@@ -151,17 +153,29 @@ export default function Archived({
     setLoading(true);
     setError(null);
 
-    fetch(url)
-      .then(r => {
-        if (!r.ok) throw new Error(`Failed to load archived spots (${r.status})`);
-        return r.json() as Promise<APIResponse>;
-      })
-      .then(data => {
+    const doFetch = async () => {
+      try {
+        let data: APIResponse;
+        if (Capacitor.isNativePlatform()) {
+          const response = await CapacitorHttp.get({
+            url,
+            headers: { "Accept": "application/json" },
+          });
+          data = response.data as APIResponse;
+        } else {
+          const r = await fetch(url, { credentials: "include" });
+          if (!r.ok) throw new Error(`Failed to load archived spots (${r.status})`);
+          data = await r.json() as APIResponse;
+        }
         const raw: APISpot[] = data.archived_spots ?? [];
         setSpots(raw.map(normaliseSpot));
-      })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+      } catch (e: any) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+    doFetch();
   }, [spotsEndpoint]);
 
   useEffect(() => {
@@ -195,8 +209,16 @@ export default function Archived({
 
     try {
       const body = new URLSearchParams({ spot_id: String(id) });
-      const res = await fetch(url, { method: "POST", body });
-      if (!res.ok) throw new Error(`Unarchive failed (${res.status})`);
+      if (Capacitor.isNativePlatform()) {
+        await CapacitorHttp.post({
+          url,
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          data: `spot_id=${id}`,
+        });
+      } else {
+        const res = await fetch(url, { method: "POST", body });
+        if (!res.ok) throw new Error(`Unarchive failed (${res.status})`);
+      }
     } catch (e: unknown) {
       setFlash({ message: (e as Error).message, type: "danger" });
       return;

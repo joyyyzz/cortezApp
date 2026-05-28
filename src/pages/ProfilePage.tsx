@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useHistory } from "react-router-dom";
 import { CapacitorHttp } from "@capacitor/core";
 import { Capacitor } from "@capacitor/core";
+import AppLayout from "../components/AppLayout"; // ← adjust path if needed
 
 // ─── API Base ─────────────────────────────────────────────────────────────────
 const API_BASE = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_profile";
@@ -30,9 +31,17 @@ const NAV_ITEMS = [
   { icon: "fa-map",            label: "Map",        path: "/mappage"       },
 ];
 
-function Sidebar({ onNavigate }: { onNavigate: (path: string) => void }) {
+// ─── Sidebar ──────────────────────────────────────────────────────────────────
+// ✅ CHANGED: accepts isMobileOpen
+function Sidebar({
+  onNavigate,
+  isMobileOpen,
+}: {
+  onNavigate: (path: string) => void;
+  isMobileOpen: boolean;
+}) {
   return (
-    <div id="sidebar">
+    <div id="sidebar" className={isMobileOpen ? "mobile-open" : ""}>
       <a className="sidebar-brand" href="#brand" onClick={e => { e.preventDefault(); onNavigate("/userdashboard"); }}>
         <span className="sidebar-brand-icon"><i className="fas fa-laugh-wink" /></span>
         <span style={{ fontSize: 17, fontWeight: 700 }}><em><b>TOUR_</b></em>ISTA</span>
@@ -55,6 +64,9 @@ export default function ProfilePage({ onLogout }: ProfileUserProps) {
   const history        = useHistory();
   const handleNavigate = (path: string) => history.push(path);
   const handleLogout   = onLogout ?? (() => history.push("/login"));
+
+  // ✅ NEW: hamburger state
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   const [userDropOpen, setUserDropOpen] = useState(false);
   const [searchQuery,  setSearchQuery]  = useState("");
@@ -79,13 +91,11 @@ export default function ProfilePage({ onLogout }: ProfileUserProps) {
     setTimeout(() => setToast(null), 3000);
   }
 
-  // ✅ fetchProfile — CapacitorHttp sa mobile
   const fetchProfile = useCallback(async () => {
     setApiLoading(true);
     try {
       const storedUid = localStorage.getItem("user_id") || "";
       let data: ApiProfileResponse;
-
       if (Capacitor.isNativePlatform()) {
         const response = await CapacitorHttp.get({
           url: `${API_BASE}?user_id=${storedUid}`,
@@ -93,35 +103,19 @@ export default function ProfilePage({ onLogout }: ProfileUserProps) {
         });
         data = response.data as ApiProfileResponse;
       } else {
-        const res = await fetch(`${API_BASE}?user_id=${storedUid}`, {
-          method: "GET",
-          credentials: "include",
-        });
+        const res = await fetch(`${API_BASE}?user_id=${storedUid}`, { method: "GET", credentials: "include" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const text = await res.text();
-        try { data = JSON.parse(text); }
-        catch { throw new Error("Server returned non-JSON response."); }
+        try { data = JSON.parse(text); } catch { throw new Error("Server returned non-JSON response."); }
       }
-
       if (data.status === "success") {
         setProfile(data);
-        const synced = {
-          fname:   data.fname   ?? "",
-          mname:   data.mname   ?? "",
-          lname:   data.lname   ?? "",
-          address: data.address ?? "",
-        };
-        setForm(synced);
-        setDisplayed(synced);
+        const synced = { fname: data.fname ?? "", mname: data.mname ?? "", lname: data.lname ?? "", address: data.address ?? "" };
+        setForm(synced); setDisplayed(synced);
         if (data.profile_photo) setAvatarSrc(data.profile_photo);
-      } else {
-        showToast("Could not load profile.", true);
-      }
-    } catch (err) {
-      showToast(`Network error: ${err}`, true);
-    } finally {
-      setApiLoading(false);
-    }
+      } else { showToast("Could not load profile.", true); }
+    } catch (err) { showToast(`Network error: ${err}`, true); }
+    finally { setApiLoading(false); }
   }, []);
 
   useEffect(() => { fetchProfile(); }, [fetchProfile]);
@@ -133,7 +127,6 @@ export default function ProfilePage({ onLogout }: ProfileUserProps) {
     return () => document.removeEventListener("click", handler);
   }, [userDropOpen]);
 
-  // ✅ Photo upload — regular fetch lang (FormData)
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -159,7 +152,6 @@ export default function ProfilePage({ onLogout }: ProfileUserProps) {
     e.target.value = "";
   }
 
-  // ✅ Save edits — CapacitorHttp sa mobile
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     const storedUid = localStorage.getItem("user_id") || String(activeUserId ?? "");
@@ -177,17 +169,9 @@ export default function ProfilePage({ onLogout }: ProfileUserProps) {
         const r = await fetch(`${API_BASE}/update_profile`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body, credentials: "include" });
         res = await r.json();
       }
-      if (res.status === "success") {
-        setDisplayed({ ...form });
-        setEditOpen(false);
-        showToast("Profile updated successfully!");
-        fetchProfile();
-      } else {
-        showToast(res.message || "Update failed.", true);
-      }
-    } catch {
-      showToast("Error saving profile.", true);
-    }
+      if (res.status === "success") { setDisplayed({ ...form }); setEditOpen(false); showToast("Profile updated successfully!"); fetchProfile(); }
+      else { showToast(res.message || "Update failed.", true); }
+    } catch { showToast("Error saving profile.", true); }
   }
 
   function handleSearch(e: React.FormEvent) {
@@ -196,7 +180,8 @@ export default function ProfilePage({ onLogout }: ProfileUserProps) {
   }
 
   return (
-    <>
+    // ✅ Wrapped with AppLayout
+    <AppLayout isMobileOpen={isMobileOpen} onMobileToggle={() => setIsMobileOpen(o => !o)}>
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap');
@@ -204,7 +189,12 @@ export default function ProfilePage({ onLogout }: ProfileUserProps) {
         html,body,#root { height:100%; overflow:hidden; }
         body { font-family:'DM Sans',sans-serif; background:#f8f9fc; }
         #wrapper { display:flex; height:100vh; overflow:hidden; }
-        #sidebar { width:225px; min-width:225px; background:linear-gradient(180deg,#4e73df 10%,#224abe 100%); display:flex; flex-direction:column; height:100vh; position:fixed; top:0; left:0; flex-shrink:0; z-index:100; }
+        #sidebar {
+          width:225px; min-width:225px;
+          background:linear-gradient(180deg,#4e73df 10%,#224abe 100%);
+          display:flex; flex-direction:column;
+          height:100vh; position:fixed; top:0; left:0; flex-shrink:0; z-index:200;
+        }
         .sidebar-brand { display:flex; align-items:center; gap:10px; padding:1.25rem 1rem; color:#fff; text-decoration:none; }
         .sidebar-brand-icon { font-size:22px; transform:rotate(-15deg); display:inline-block; }
         hr.sidebar-divider { border:none; border-top:1px solid rgba(255,255,255,0.15); margin:0 1rem; }
@@ -267,15 +257,24 @@ export default function ProfilePage({ onLogout }: ProfileUserProps) {
         .toast-msg { position:fixed; bottom:24px; right:24px; background:#1a56db; color:#fff; padding:10px 20px; border-radius:8px; font-size:13px; font-family:'DM Sans',sans-serif; z-index:9999; box-shadow:0 4px 16px rgba(26,86,219,0.25); animation:toast-in 0.25s ease; }
         .toast-msg.error { background:#dc2626; }
         @keyframes toast-in { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+        /* ✅ Hamburger button */
+        .hamburger-btn { display:none; background:none; border:none; cursor:pointer; font-size:20px; color:#4e73df; padding:4px 8px; align-items:center; justify-content:center; }
+        @media (max-width: 768px) { .hamburger-btn { display:flex !important; } }
       `}</style>
 
       {toast && <div className={`toast-msg${toast.error ? " error" : ""}`}>{toast.msg}</div>}
 
       <div id="wrapper">
-        <Sidebar onNavigate={handleNavigate} />
+        {/* ✅ Sidebar with isMobileOpen */}
+        <Sidebar onNavigate={handleNavigate} isMobileOpen={isMobileOpen} />
 
         <div id="content-wrapper">
           <div id="topbar">
+            {/* ✅ Hamburger button */}
+            <button className="hamburger-btn" onClick={() => setIsMobileOpen(o => !o)}>
+              <i className="fas fa-bars" />
+            </button>
+
             <form className="topbar-search-wrap" onSubmit={handleSearch}>
               <input type="text" placeholder="Search tourist spot..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} autoComplete="off" />
               <button type="submit"><i className="fas fa-search fa-sm" /></button>
@@ -305,18 +304,13 @@ export default function ProfilePage({ onLogout }: ProfileUserProps) {
                 {avatarSrc ? <img src={avatarSrc} alt="Profile Photo" /> : <div className="profile-avatar-fallback"><i className="fas fa-user" /></div>}
                 <div className="avatar-overlay"><i className="fas fa-camera" /><span>Change</span></div>
               </div>
-
               <input type="file" ref={photoInputRef} accept="image/jpeg,image/png,image/gif,image/webp" style={{ display:"none" }} onChange={handlePhotoChange} />
-
               {uploading && <div className="progress"><div className="progress-bar" style={{ width:"100%" }} /></div>}
-
               {apiLoading
                 ? <><div className="sk sk-name" /><div className="sk sk-handle" /></>
                 : <><div className="profile-name">{displayName || "—"}</div><div className="profile-handle">@{activeUsername || "..."}</div></>
               }
-
               <hr className="ta-divider" />
-
               {apiLoading
                 ? [1,2,3,4,5].map(i => <div key={i} className="sk sk-block" />)
                 : [
@@ -332,14 +326,12 @@ export default function ProfilePage({ onLogout }: ProfileUserProps) {
                     </div>
                   ))
               }
-
               {!apiLoading && (
                 <button className="btn-edit-profile" onClick={() => setEditOpen(o => !o)}>
                   <i className="fas fa-pen" style={{ fontSize:13 }} />
                   {editOpen ? "Cancel Editing" : "Edit Profile"}
                 </button>
               )}
-
               {editOpen && (
                 <div className="edit-form-panel">
                   <form onSubmit={handleSave}>
@@ -364,6 +356,6 @@ export default function ProfilePage({ onLogout }: ProfileUserProps) {
           </div>
         </div>
       </div>
-    </>
+    </AppLayout>
   );
 }

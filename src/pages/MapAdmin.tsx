@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useHistory } from "react-router-dom";
 import { CapacitorHttp } from "@capacitor/core";
 import { Capacitor } from "@capacitor/core";
+import AppLayout from "../components/AppLayout";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BASE_URL      = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php";
@@ -145,7 +146,6 @@ function LeafletMap({
       }
     });
 
-    // ✅ CapacitorHttp para sa geocode proxy sa mobile
     needsGeocode.forEach(async spot => {
       const query = encodeURIComponent(spot.location + ", Philippines");
       try {
@@ -196,6 +196,9 @@ export default function MapAdmin({
 }: MapAdminProps) {
   const history = useHistory();
 
+  // ── Sidebar mobile state ──
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+
   const username   = propUsername ?? localStorage.getItem("username")      ?? "Admin";
   const savedPhoto = propPhoto    ?? localStorage.getItem("profile_photo") ?? null;
 
@@ -233,11 +236,9 @@ export default function MapAdmin({
     }
   }, []);
 
-  // ✅ Fetch spots — CapacitorHttp sa mobile
   useEffect(() => {
     setLoading(true);
     setError(null);
-
     const doFetch = async () => {
       try {
         let data: Spot[];
@@ -259,11 +260,9 @@ export default function MapAdmin({
         setLoading(false);
       }
     };
-
     doFetch();
   }, []);
 
-  // ✅ Search — CapacitorHttp sa mobile
   const handleSearchInput = useCallback((val: string) => {
     setSearchQuery(val);
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -311,7 +310,6 @@ export default function MapAdmin({
     }, 300);
   }, []);
 
-  // ✅ Pick result — CapacitorHttp sa mobile
   const handlePickResult = useCallback(async (result: SearchResult) => {
     setSearchQuery(result.spot_name);
     setShowSearchDrop(false);
@@ -373,7 +371,7 @@ export default function MapAdmin({
   ];
 
   return (
-    <>
+    <AppLayout isMobileOpen={isMobileOpen} onMobileToggle={() => setIsMobileOpen(o => !o)}>
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap');
@@ -381,7 +379,7 @@ export default function MapAdmin({
         html,body,#root { height:100%; overflow:hidden; }
         body { font-family:'DM Sans',sans-serif; background:#f8f9fc; }
         #wrapper { display:flex; height:100vh; overflow:hidden; }
-        #sidebar { width:225px; min-width:225px; background:linear-gradient(180deg,#4e73df 10%,#224abe 100%); display:flex; flex-direction:column; height:100vh; flex-shrink:0; z-index:100; }
+        #sidebar { width:225px; min-width:225px; background:linear-gradient(180deg,#4e73df 10%,#224abe 100%); display:flex; flex-direction:column; height:100vh; position:fixed; top:0; left:0; flex-shrink:0; z-index:100; }
         .sidebar-brand { display:flex; align-items:center; gap:10px; padding:1.25rem 1rem; color:#fff; text-decoration:none; }
         .sidebar-brand-icon { font-size:22px; transform:rotate(-15deg); display:inline-block; }
         .sidebar-brand-text { font-size:17px; font-weight:700; }
@@ -396,6 +394,11 @@ export default function MapAdmin({
         #content-wrapper::-webkit-scrollbar-thumb { background:#bfdbfe; border-radius:4px; }
         #content-wrapper::-webkit-scrollbar-thumb:hover { background:#93c5fd; }
         #topbar { height:65px; flex-shrink:0; background:#fff; box-shadow:0 2px 4px rgba(0,0,0,0.08); display:flex; align-items:center; padding:0 1.5rem; gap:1rem; position:sticky; top:0; z-index:99; }
+
+        /* ── Hamburger ── */
+        .hamburger-btn { display:none; background:none; border:none; cursor:pointer; padding:6px 8px; color:#4e73df; font-size:20px; border-radius:6px; line-height:1; flex-shrink:0; }
+        @media(max-width:768px) { .hamburger-btn { display:flex; align-items:center; justify-content:center; } }
+
         .topbar-search { display:flex; position:relative; }
         .topbar-search input { border:1px solid #d1d3e2; border-right:none; border-radius:5px 0 0 5px; padding:7px 14px; font-size:13px; font-family:'DM Sans',sans-serif; background:#f8f9fc; color:#333; width:280px; outline:none; }
         .topbar-search button { background:#4e73df; border:none; border-radius:0 5px 5px 0; padding:7px 14px; color:#fff; cursor:pointer; }
@@ -426,10 +429,15 @@ export default function MapAdmin({
         .map-loading { height:200px; display:flex; align-items:center; justify-content:center; color:#6b8ab8; font-size:14px; gap:8px; }
         .map-error { background:#fef2f2; border:1px solid #fca5a5; color:#b91c1c; border-radius:8px; padding:12px 16px; font-size:13px; margin-bottom:1rem; }
         @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+
+        @media(max-width:768px){
+          .topbar-search input { width:140px; }
+          .search-dropdown { width:260px; }
+        }
       `}</style>
 
       <div id="wrapper">
-        <div id="sidebar">
+        <div id="sidebar" className={isMobileOpen ? "mobile-open" : ""}>
           <a className="sidebar-brand" href="/dashboard">
             <span className="sidebar-brand-icon"><i className="fas fa-laugh-wink" /></span>
             <span className="sidebar-brand-text"><em><b>TOUR_</b></em>ISTA</span>
@@ -438,7 +446,11 @@ export default function MapAdmin({
           <ul className="sidebar-nav">
             {NAV_ITEMS.map(({ icon, label, path }) => (
               <li key={label} className={path === "/mapadmin" ? "active" : ""}>
-                <a href="#" onClick={e => { e.preventDefault(); history.push(path); }}>
+                <a href="#" onClick={e => {
+                  e.preventDefault();
+                  setIsMobileOpen(false);
+                  history.push(path);
+                }}>
                   <i className={`fas fa-fw ${icon}`} />
                   <span>{label}</span>
                 </a>
@@ -449,6 +461,15 @@ export default function MapAdmin({
 
         <div id="content-wrapper">
           <div id="topbar">
+            {/* ── Hamburger ── */}
+            <button
+              className="hamburger-btn"
+              onClick={() => setIsMobileOpen(o => !o)}
+              aria-label="Toggle sidebar"
+            >
+              <i className={`fas ${isMobileOpen ? "fa-times" : "fa-bars"}`}></i>
+            </button>
+
             <div className="topbar-search" ref={searchRef}>
               <input
                 type="text"
@@ -526,6 +547,6 @@ export default function MapAdmin({
           </div>
         </div>
       </div>
-    </>
+    </AppLayout>
   );
 }

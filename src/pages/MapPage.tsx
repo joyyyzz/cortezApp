@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useHistory } from "react-router-dom";
+import AppLayout from "../components/AppLayout"; // ← adjust path if needed
 
 // ─── Base URL ─────────────────────────────────────────────────────────────────
 const API_BASE    = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_map";
 const API_PROFILE = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_profile";
 
-// ─── API availability flag ────────────────────────────────────────────────────
 const _api = { available: true };
 
 async function _safeFetch(url: string, options?: RequestInit): Promise<any | null> {
@@ -29,17 +29,12 @@ async function _safeFetch(url: string, options?: RequestInit): Promise<any | nul
   }
 }
 
-// ─── API helpers ──────────────────────────────────────────────────────────────
 async function apiGetSpots(params?: { category?: string }) {
   const qs = new URLSearchParams();
   if (params?.category && params.category !== "all") qs.set("category", params.category);
   return _safeFetch(`${API_BASE}/spots?${qs.toString()}`);
 }
-
-async function apiGetSpot(id: number) {
-  return _safeFetch(`${API_BASE}/spot/${id}`);
-}
-
+async function apiGetSpot(id: number) { return _safeFetch(`${API_BASE}/spot/${id}`); }
 async function apiGeocode(address: string, spotId?: number) {
   const qs = new URLSearchParams({ address });
   if (spotId) qs.set("spot_id", String(spotId));
@@ -47,70 +42,28 @@ async function apiGeocode(address: string, spotId?: number) {
   if (data?.status === "ok" && data.result) return data.result as { lat: number; lng: number; display_name: string };
   return null;
 }
-
 async function apiGeocodeBatch(items: { spot_id: number; address: string }[]) {
-  const data = await _safeFetch(`${API_BASE}/geocode_batch`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(items),
-  });
+  const data = await _safeFetch(`${API_BASE}/geocode_batch`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(items) });
   if (data?.status === "ok" && Array.isArray(data.results))
     return data.results as { spot_id: number; lat: number | null; lng: number | null; source: string }[];
   return null;
 }
+async function apiSearch(keyword: string) { return _safeFetch(`${API_BASE}/search?keyword=${encodeURIComponent(keyword)}`); }
+async function apiGetCategories() { return _safeFetch(`${API_BASE}/categories`); }
 
-async function apiSearch(keyword: string) {
-  return _safeFetch(`${API_BASE}/search?keyword=${encodeURIComponent(keyword)}`);
-}
-
-async function apiGetCategories() {
-  return _safeFetch(`${API_BASE}/categories`);
-}
-
-// ─── Nominatim fallback ───────────────────────────────────────────────────────
 async function nominatimGeocode(address: string): Promise<{ lat: number; lng: number } | null> {
   try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address + ", Philippines")}&limit=1&countrycodes=ph`,
-      { headers: { "Accept-Language": "en" } }
-    );
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address + ", Philippines")}&limit=1&countrycodes=ph`, { headers: { "Accept-Language": "en" } });
     const results = await res.json();
     if (results?.length) return { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon) };
-  } catch (e) {
-    console.error("[MapPage] Nominatim error:", e);
-  }
+  } catch (e) { console.error("[MapPage] Nominatim error:", e); }
   return null;
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-interface TouristSpot {
-  spot_id:      number;
-  spot_name:    string;
-  location:     string;
-  category?:    string;
-  description?: string;
-  spot_image?:  string;
-  image_url?:   string;
-  lat?:         number | null;
-  lng?:         number | null;
-}
+interface TouristSpot { spot_id: number; spot_name: string; location: string; category?: string; description?: string; spot_image?: string; image_url?: string; lat?: number | null; lng?: number | null; }
+interface SearchResult { spot_id: number; spot_name: string; location: string; category: string; image_url: string; }
+interface MapUserProps { spots?: TouristSpot[]; username?: string; profile_photo?: string; onLogout?: () => void; }
 
-interface SearchResult {
-  spot_id:   number;
-  spot_name: string;
-  location:  string;
-  category:  string;
-  image_url: string;
-}
-
-interface MapUserProps {
-  spots?:         TouristSpot[];
-  username?:      string;
-  profile_photo?: string;
-  onLogout?:      () => void;
-}
-
-// ─── Nav Items ────────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
   { icon: "fa-tachometer-alt", label: "Dashboard", path: "/userdashboard" },
   { icon: "fa-heart",          label: "Favorites",  path: "/favorite"      },
@@ -119,9 +72,16 @@ const NAV_ITEMS = [
 ];
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-function Sidebar({ onNavigate }: { onNavigate: (path: string) => void }) {
+// ✅ CHANGED: accepts isMobileOpen
+function Sidebar({
+  onNavigate,
+  isMobileOpen,
+}: {
+  onNavigate: (path: string) => void;
+  isMobileOpen: boolean;
+}) {
   return (
-    <div id="sidebar">
+    <div id="sidebar" className={isMobileOpen ? "mobile-open" : ""}>
       <a className="sidebar-brand" href="#" onClick={e => { e.preventDefault(); onNavigate("/userdashboard"); }}>
         <span className="sidebar-brand-icon"><i className="fas fa-laugh-wink" /></span>
         <span style={{ fontSize: 17, fontWeight: 700 }}><em><b>TOUR_</b></em>ISTA</span>
@@ -142,51 +102,32 @@ function Sidebar({ onNavigate }: { onNavigate: (path: string) => void }) {
 }
 
 // ─── TopbarNav ────────────────────────────────────────────────────────────────
+// ✅ CHANGED: added onMenuToggle
 function TopbarNav({
-  searchQuery,
-  onSearchChange,
-  onSearchSubmit,
-  searchResults,
-  showSearchDrop,
-  onPickResult,
-  username: propUsername,
-  profilePhoto: propPhoto,
-  onLogout,
+  searchQuery, onSearchChange, onSearchSubmit, searchResults, showSearchDrop, onPickResult,
+  username: propUsername, profilePhoto: propPhoto, onLogout, onMenuToggle,
 }: {
-  searchQuery:     string;
-  onSearchChange:  (v: string) => void;
-  onSearchSubmit?: (e: React.FormEvent) => void;
-  searchResults?:  SearchResult[];
-  showSearchDrop?: boolean;
-  onPickResult?:   (r: SearchResult) => void;
-  username?:       string;
-  profilePhoto?:   string;
-  onLogout:        () => void;
+  searchQuery: string; onSearchChange: (v: string) => void; onSearchSubmit?: (e: React.FormEvent) => void;
+  searchResults?: SearchResult[]; showSearchDrop?: boolean; onPickResult?: (r: SearchResult) => void;
+  username?: string; profilePhoto?: string; onLogout: () => void;
+  onMenuToggle: () => void; // ← NEW
 }) {
-  const [dropOpen,  setDropOpen]  = useState(false);
-  const [username,  setUsername]  = useState(propUsername ?? "");
-  const [photo,     setPhoto]     = useState(propPhoto ?? "");
+  const [dropOpen, setDropOpen] = useState(false);
+  const [username, setUsername] = useState(propUsername ?? "");
+  const [photo,    setPhoto]    = useState(propPhoto ?? "");
 
-  // Fetch profile from API_profile if not passed as props
   useEffect(() => {
     if (propUsername && propPhoto) return;
     const uid = localStorage.getItem("user_id") ?? "";
     fetch(`${API_PROFILE}?user_id=${uid}`, { credentials: "include" })
       .then(r => r.json())
-      .then(data => {
-        if (data.status === "success") {
-          setUsername(data.username ?? "");
-          setPhoto(data.profile_photo ?? "");
-        }
-      })
+      .then(data => { if (data.status === "success") { setUsername(data.username ?? ""); setPhoto(data.profile_photo ?? ""); } })
       .catch(() => {});
   }, [propUsername, propPhoto]);
 
-  // Sync if parent updates props later
   useEffect(() => { if (propUsername) setUsername(propUsername); }, [propUsername]);
   useEffect(() => { if (propPhoto)    setPhoto(propPhoto);       }, [propPhoto]);
 
-  // Close dropdown on outside click
   useEffect(() => {
     if (!dropOpen) return;
     const handler = () => setDropOpen(false);
@@ -196,33 +137,22 @@ function TopbarNav({
 
   return (
     <div id="topbar">
-      {/* Search */}
+      {/* ✅ Hamburger button */}
+      <button className="hamburger-btn" onClick={onMenuToggle}>
+        <i className="fas fa-bars" />
+      </button>
+
       <div className="topbar-search-wrap">
         <form onSubmit={onSearchSubmit} style={{ display: "flex" }}>
-          <input
-            type="text"
-            placeholder="Search tourist spot..."
-            value={searchQuery}
-            onChange={e => onSearchChange(e.target.value)}
-            onBlur={() => setTimeout(() => onPickResult && null, 150)}
-            autoComplete="off"
-          />
-          <button type="submit">
-            <i className="fas fa-search fa-sm" />
-          </button>
+          <input type="text" placeholder="Search tourist spot..." value={searchQuery} onChange={e => onSearchChange(e.target.value)} autoComplete="off" />
+          <button type="submit"><i className="fas fa-search fa-sm" /></button>
         </form>
-
-        {/* Search dropdown */}
         {showSearchDrop && searchResults && (
           <div className="search-dropdown">
             {searchResults.length === 0
               ? <div className="search-no-result">No spots found.</div>
               : searchResults.map(result => (
-                  <div
-                    key={result.spot_id}
-                    className="search-item"
-                    onMouseDown={() => onPickResult?.(result)}
-                  >
+                  <div key={result.spot_id} className="search-item" onMouseDown={() => onPickResult?.(result)}>
                     {result.image_url
                       ? <img src={result.image_url} alt={result.spot_name} onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
                       : <div className="search-item-no-img"><i className="fas fa-map-marker-alt" /></div>
@@ -238,28 +168,16 @@ function TopbarNav({
         )}
       </div>
 
-      {/* Right side: divider + user */}
       <div className="topbar-right">
         <div className="topbar-divider" />
-        <div
-          className="user-area"
-          onClick={e => { e.stopPropagation(); setDropOpen(o => !o); }}
-        >
+        <div className="user-area" onClick={e => { e.stopPropagation(); setDropOpen(o => !o); }}>
           <span><b>{username || "..."}</b></span>
-
           {photo
             ? <img src={photo} alt="avatar" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }} />
-            : (
-              <div style={{
-                width: 32, height: 32, borderRadius: "50%",
-                background: "#eff6ff", border: "2px solid #bfdbfe",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
+            : <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#eff6ff", border: "2px solid #bfdbfe", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <i className="fas fa-user" style={{ color: "#1a56db", fontSize: 14 }} />
               </div>
-            )
           }
-
           {dropOpen && (
             <div className="user-dropdown">
               <a href="#" onClick={e => { e.preventDefault(); onLogout(); }}>
@@ -274,17 +192,14 @@ function TopbarNav({
 }
 
 // ─── MapPage ──────────────────────────────────────────────────────────────────
-export default function MapPage({
-  spots:         propSpots,
-  username:      propUsername,
-  profile_photo: propPhoto,
-  onLogout,
-}: MapUserProps) {
+export default function MapPage({ spots: propSpots, username: propUsername, profile_photo: propPhoto, onLogout }: MapUserProps) {
   const history        = useHistory();
   const handleNavigate = (path: string) => history.push(path);
   const handleLogout   = onLogout ?? (() => history.push("/login"));
 
-  // ── State ──────────────────────────────────────────────────────────────────
+  // ✅ NEW: hamburger state
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+
   const [spots,          setSpots]          = useState<TouristSpot[]>(propSpots ?? []);
   const [searchQuery,    setSearchQuery]    = useState("");
   const [searchResults,  setSearchResults]  = useState<SearchResult[]>([]);
@@ -302,131 +217,66 @@ export default function MapPage({
 
   useEffect(() => { spotsRef.current = spots; }, [spots]);
 
-  // ── Boot: fetch spots ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!propSpots) {
       setLoadingSpots(true);
       apiGetSpots().then(data => {
-        if (data?.status === "success" && Array.isArray(data.spots)) {
-          setSpots(data.spots);
-          setSpotsTotal(data.count ?? data.spots.length);
-          setApiStatus("live");
-        } else {
-          setApiStatus("offline");
-          setSpots([]);
-        }
+        if (data?.status === "success" && Array.isArray(data.spots)) { setSpots(data.spots); setSpotsTotal(data.count ?? data.spots.length); setApiStatus("live"); }
+        else { setApiStatus("offline"); setSpots([]); }
       }).finally(() => setLoadingSpots(false));
-    } else {
-      setSpotsTotal(propSpots.length);
-      setLoadingSpots(false);
-      setApiStatus(propSpots.length ? "live" : "checking");
-    }
+    } else { setSpotsTotal(propSpots.length); setLoadingSpots(false); setApiStatus(propSpots.length ? "live" : "checking"); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Load Leaflet ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!document.getElementById("leaflet-css")) {
-      const link = document.createElement("link");
-      link.id   = "leaflet-css";
-      link.rel  = "stylesheet";
-      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      document.head.appendChild(link);
+      const link = document.createElement("link"); link.id = "leaflet-css"; link.rel = "stylesheet"; link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(link);
     }
-    if ((window as any).L) {
-      setMapReady(true);
-    } else {
-      const script  = document.createElement("script");
-      script.src    = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-      script.onload = () => setMapReady(true);
-      document.head.appendChild(script);
+    if ((window as any).L) { setMapReady(true); }
+    else {
+      const script = document.createElement("script"); script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"; script.onload = () => setMapReady(true); document.head.appendChild(script);
     }
-    return () => {
-      if (leafletMapRef.current) { leafletMapRef.current.remove(); leafletMapRef.current = null; }
-    };
+    return () => { if (leafletMapRef.current) { leafletMapRef.current.remove(); leafletMapRef.current = null; } };
   }, []);
 
-  // ── Initialise Leaflet map ─────────────────────────────────────────────────
   useEffect(() => {
     if (!mapReady || !mapRef.current || leafletMapRef.current || loadingSpots) return;
-    const L   = (window as any).L;
+    const L = (window as any).L;
     const map = L.map(mapRef.current).setView([11.0, 122.0], 8);
     leafletMapRef.current = map;
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, attribution: "&copy; OpenStreetMap contributors",
-    }).addTo(map);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
   }, [mapReady, loadingSpots]);
 
-  // ── Place / refresh markers ────────────────────────────────────────────────
   useEffect(() => {
     if (!mapReady || !leafletMapRef.current || spots.length === 0) return;
-    const L   = (window as any).L;
-    const map = leafletMapRef.current;
-    markersRef.current.forEach(m => m.remove());
-    markersRef.current = [];
-    const blueIcon = L.icon({
-      iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-      iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-      shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-      iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
-    });
-
+    const L = (window as any).L; const map = leafletMapRef.current;
+    markersRef.current.forEach(m => m.remove()); markersRef.current = [];
+    const blueIcon = L.icon({ iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png", iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png", shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png", iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] });
     function buildPopup(spot: TouristSpot) {
       const imgSrc = spot.image_url || spot.spot_image || "";
-      const imgTag = imgSrc
-        ? `<img src="${imgSrc}" alt="${spot.spot_name}" style="width:100%;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;">`
-        : "";
+      const imgTag = imgSrc ? `<img src="${imgSrc}" alt="${spot.spot_name}" style="width:100%;height:90px;object-fit:cover;border-radius:8px;margin-bottom:6px;display:block;">` : "";
       return `<div style="font-family:'DM Sans',sans-serif;min-width:180px;max-width:220px;">${imgTag}<strong style="color:#1e3a8a;font-size:14px;">${spot.spot_name}</strong><br><span style="color:#6b8ab8;font-size:12px;">📍 ${spot.location}</span>${spot.category ? `<br><span style="font-size:11px;color:#94a3b8;">${spot.category}</span>` : ""}</div>`;
     }
-
     function addMarker(spot: TouristSpot, lat: number, lng: number) {
       const marker = L.marker([lat, lng], { icon: blueIcon }).addTo(map).bindPopup(buildPopup(spot));
-      markersRef.current.push(marker);
-      (marker as any)._spot_id = spot.spot_id;
+      markersRef.current.push(marker); (marker as any)._spot_id = spot.spot_id;
     }
-
     const needsGeocode: TouristSpot[] = [];
-    spots.forEach(spot => {
-      const lat = spot.lat;
-      const lng = spot.lng ?? (spot as any).lon;
-      if (lat != null && lng != null) addMarker(spot, lat, lng);
-      else needsGeocode.push(spot);
-    });
-
+    spots.forEach(spot => { const lat = spot.lat; const lng = spot.lng ?? (spot as any).lon; if (lat != null && lng != null) addMarker(spot, lat, lng); else needsGeocode.push(spot); });
     if (needsGeocode.length === 0) return;
-
     if (_api.available) {
       apiGeocodeBatch(needsGeocode.map(s => ({ spot_id: s.spot_id, address: s.location }))).then(results => {
-        if (results) {
-          results.forEach(r => {
-            if (r.lat == null || r.lng == null) return;
-            const spot = needsGeocode.find(s => s.spot_id === r.spot_id);
-            if (!spot) return;
-            addMarker(spot, r.lat, r.lng);
-            setSpots(prev => prev.map(s => s.spot_id === r.spot_id ? { ...s, lat: r.lat, lng: r.lng } : s));
-          });
-        } else {
-          _geocodeDirectly(needsGeocode, addMarker);
-        }
+        if (results) { results.forEach(r => { if (r.lat == null || r.lng == null) return; const spot = needsGeocode.find(s => s.spot_id === r.spot_id); if (!spot) return; addMarker(spot, r.lat, r.lng); setSpots(prev => prev.map(s => s.spot_id === r.spot_id ? { ...s, lat: r.lat, lng: r.lng } : s)); }); }
+        else { _geocodeDirectly(needsGeocode, addMarker); }
       });
-    } else {
-      _geocodeDirectly(needsGeocode, addMarker);
-    }
+    } else { _geocodeDirectly(needsGeocode, addMarker); }
   }, [spots, mapReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function _geocodeDirectly(list: TouristSpot[], addMarker: (spot: TouristSpot, lat: number, lng: number) => void) {
     list.reduce((chain, spot, index) => chain.then(() => new Promise<void>(resolve => {
-      setTimeout(async () => {
-        const geo = await nominatimGeocode(spot.location);
-        if (geo) {
-          addMarker(spot, geo.lat, geo.lng);
-          setSpots(prev => prev.map(s => s.spot_id === spot.spot_id ? { ...s, lat: geo.lat, lng: geo.lng } : s));
-        }
-        resolve();
-      }, index * 1200);
+      setTimeout(async () => { const geo = await nominatimGeocode(spot.location); if (geo) { addMarker(spot, geo.lat, geo.lng); setSpots(prev => prev.map(s => s.spot_id === spot.spot_id ? { ...s, lat: geo.lat, lng: geo.lng } : s)); } resolve(); }, index * 1200);
     })), Promise.resolve());
   }
 
-  // ── Live search ────────────────────────────────────────────────────────────
   const handleSearchInput = useCallback((val: string) => {
     setSearchQuery(val);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -436,126 +286,61 @@ export default function MapPage({
       if (_api.available) {
         const data = await apiSearch(val);
         if (data?.status === "success" && Array.isArray(data.spots)) {
-          results = data.spots.map((s: any) => ({
-            spot_id:   s.spot_id,
-            spot_name: s.spot_name,
-            location:  s.location,
-            category:  typeof s.category === "object" ? s.category?.value ?? "Other" : (s.category ?? "Other"),
-            image_url: s.image_url ?? s.spot_image ?? "",
-          }));
+          results = data.spots.map((s: any) => ({ spot_id: s.spot_id, spot_name: s.spot_name, location: s.location, category: typeof s.category === "object" ? s.category?.value ?? "Other" : (s.category ?? "Other"), image_url: s.image_url ?? s.spot_image ?? "" }));
         }
       }
       if (!results.length) {
         const kw = val.toLowerCase();
-        results = spotsRef.current
-          .filter(s => s.spot_name.toLowerCase().includes(kw) || s.location.toLowerCase().includes(kw))
-          .map(s => ({
-            spot_id:   s.spot_id,
-            spot_name: s.spot_name,
-            location:  s.location,
-            category:  s.category ?? "Other",
-            image_url: s.image_url ?? s.spot_image ?? "",
-          }));
+        results = spotsRef.current.filter(s => s.spot_name.toLowerCase().includes(kw) || s.location.toLowerCase().includes(kw)).map(s => ({ spot_id: s.spot_id, spot_name: s.spot_name, location: s.location, category: s.category ?? "Other", image_url: s.image_url ?? s.spot_image ?? "" }));
       }
-      setSearchResults(results);
-      setShowSearchDrop(true);
+      setSearchResults(results); setShowSearchDrop(true);
     }, 300);
   }, []);
 
-  // ── Fly to spot ────────────────────────────────────────────────────────────
   const handlePickResult = useCallback(async (result: SearchResult) => {
-    setSearchQuery(result.spot_name);
-    setShowSearchDrop(false);
-    const map = leafletMapRef.current;
-    if (!map) return;
+    setSearchQuery(result.spot_name); setShowSearchDrop(false);
+    const map = leafletMapRef.current; if (!map) return;
     const spot = spotsRef.current.find(s => s.spot_id === result.spot_id);
-    if (spot?.lat != null && spot.lng != null) {
-      map.flyTo([spot.lat, spot.lng], 14, { animate: true, duration: 1.2 });
-      const marker = markersRef.current.find(m => (m as any)._spot_id === spot.spot_id);
-      if (marker) setTimeout(() => marker.openPopup(), 900);
-      return;
-    }
-    if (_api.available) {
-      const data = await apiGetSpot(result.spot_id);
-      if (data?.status === "success" && data.data?.lat != null) {
-        map.flyTo([data.data.lat, data.data.lng], 14, { animate: true, duration: 1.2 });
-        return;
-      }
-    }
-    const geo = _api.available
-      ? await apiGeocode(result.location, result.spot_id)
-      : await nominatimGeocode(result.location);
+    if (spot?.lat != null && spot.lng != null) { map.flyTo([spot.lat, spot.lng], 14, { animate: true, duration: 1.2 }); const marker = markersRef.current.find(m => (m as any)._spot_id === spot.spot_id); if (marker) setTimeout(() => marker.openPopup(), 900); return; }
+    if (_api.available) { const data = await apiGetSpot(result.spot_id); if (data?.status === "success" && data.data?.lat != null) { map.flyTo([data.data.lat, data.data.lng], 14, { animate: true, duration: 1.2 }); return; } }
+    const geo = _api.available ? await apiGeocode(result.location, result.spot_id) : await nominatimGeocode(result.location);
     if (geo) map.flyTo([geo.lat, geo.lng], 14, { animate: true, duration: 1.2 });
   }, []);
 
-  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <>
+    // ✅ Wrapped with AppLayout
+    <AppLayout isMobileOpen={isMobileOpen} onMobileToggle={() => setIsMobileOpen(o => !o)}>
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap');
-
         *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
         html,body,#root { height:100%; overflow:hidden; }
         body { font-family:'DM Sans',sans-serif; background:#f8f9fc; }
-
         #wrapper { display:flex; height:100vh; overflow:hidden; }
-
         #sidebar {
           width:225px; min-width:225px;
           background:linear-gradient(180deg,#4e73df 10%,#224abe 100%);
           display:flex; flex-direction:column;
-          height:100vh; position:fixed; top:0; left:0;
-          flex-shrink:0; z-index:100;
+          height:100vh; position:fixed; top:0; left:0; flex-shrink:0; z-index:200;
         }
         .sidebar-brand { display:flex; align-items:center; gap:10px; padding:1.25rem 1rem; color:#fff; text-decoration:none; }
         .sidebar-brand-icon { font-size:22px; transform:rotate(-15deg); display:inline-block; }
         hr.sidebar-divider { border:none; border-top:1px solid rgba(255,255,255,0.15); margin:0 1rem; }
         .sidebar-nav { list-style:none; padding:0; flex:1; }
-        .sidebar-nav li a {
-          display:flex; align-items:center; gap:10px; padding:12px 20px;
-          color:rgba(255,255,255,0.75); font-size:13.5px; font-weight:500;
-          text-decoration:none; transition:background .15s,color .15s;
-        }
+        .sidebar-nav li a { display:flex; align-items:center; gap:10px; padding:12px 20px; color:rgba(255,255,255,0.75); font-size:13.5px; font-weight:500; text-decoration:none; transition:background .15s,color .15s; }
         .sidebar-nav li a:hover,.sidebar-nav li.active a { background:rgba(255,255,255,0.12); color:#fff; }
         .sidebar-nav li a i { width:18px; text-align:center; font-size:14px; }
-
-        #content-wrapper {
-          margin-left:225px;
-          flex:1;
-          display:flex;
-          flex-direction:column;
-          height:100vh;
-          overflow-y:auto;
-          overflow-x:hidden;
-          scrollbar-width:thin;
-          scrollbar-color:#bfdbfe #f1f5f9;
-        }
+        #content-wrapper { margin-left:225px; flex:1; display:flex; flex-direction:column; height:100vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#bfdbfe #f1f5f9; }
         #content-wrapper::-webkit-scrollbar { width:8px; }
         #content-wrapper::-webkit-scrollbar-track { background:#f1f5f9; }
         #content-wrapper::-webkit-scrollbar-thumb { background:#bfdbfe; border-radius:4px; }
         #content-wrapper::-webkit-scrollbar-thumb:hover { background:#93c5fd; }
-
-        #topbar {
-          height:65px; flex-shrink:0;
-          background:#fff; box-shadow:0 2px 4px rgba(0,0,0,.08);
-          display:flex; align-items:center; padding:0 1.5rem; gap:1rem;
-          position:sticky; top:0; z-index:99;
-        }
+        #topbar { height:65px; flex-shrink:0; background:#fff; box-shadow:0 2px 4px rgba(0,0,0,.08); display:flex; align-items:center; padding:0 1.5rem; gap:1rem; position:sticky; top:0; z-index:99; }
         .topbar-search-wrap { position:relative; display:flex; flex-direction:column; }
         .topbar-search-wrap form { display:flex; }
-        .topbar-search-wrap input {
-          border:1px solid #d1d3e2; border-right:none; border-radius:5px 0 0 5px;
-          padding:7px 14px; font-size:13px; font-family:'DM Sans',sans-serif;
-          background:#f8f9fc; color:#333; width:280px; outline:none;
-        }
+        .topbar-search-wrap input { border:1px solid #d1d3e2; border-right:none; border-radius:5px 0 0 5px; padding:7px 14px; font-size:13px; font-family:'DM Sans',sans-serif; background:#f8f9fc; color:#333; width:280px; outline:none; }
         .topbar-search-wrap button { background:#4e73df; border:none; border-radius:0 5px 5px 0; padding:7px 14px; color:#fff; cursor:pointer; }
-
-        .search-dropdown {
-          position:absolute; top:100%; left:0; background:#fff;
-          width:340px; z-index:1000; border:1px solid #ddd; border-radius:5px;
-          max-height:300px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,.1);
-        }
+        .search-dropdown { position:absolute; top:100%; left:0; background:#fff; width:340px; z-index:1000; border:1px solid #ddd; border-radius:5px; max-height:300px; overflow-y:auto; box-shadow:0 4px 12px rgba(0,0,0,.1); }
         .search-item { display:flex; align-items:center; padding:10px; border-bottom:1px solid #eee; cursor:pointer; }
         .search-item:hover { background:#f5f5f5; }
         .search-item img { width:45px; height:45px; border-radius:5px; margin-right:10px; object-fit:cover; flex-shrink:0; }
@@ -565,39 +350,32 @@ export default function MapPage({
         .search-name { font-weight:bold; font-size:13px; color:#1e3a8a; }
         .search-location { font-size:12px; color:gray; }
         .search-no-result { padding:12px 16px; font-size:13px; color:#94a3b8; text-align:center; }
-
         .topbar-right { display:flex; align-items:center; gap:1rem; margin-left:auto; }
         .topbar-divider { border-left:1px solid #e3e6f0; height:36px; }
         .user-area { display:flex; align-items:center; gap:8px; cursor:pointer; position:relative; }
         .user-area span { font-size:13px; font-weight:600; color:#333; }
-        .user-area img { width:32px; height:32px; border-radius:50%; object-fit:cover; }
-        .user-dropdown {
-          position:absolute; top:calc(100% + 10px); right:0; background:#fff;
-          border:1px solid #e3e6f0; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.1);
-          min-width:160px; z-index:200;
-        }
+        .user-dropdown { position:absolute; top:calc(100% + 10px); right:0; background:#fff; border:1px solid #e3e6f0; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.1); min-width:160px; z-index:200; }
         .user-dropdown a { display:flex; align-items:center; gap:8px; padding:10px 16px; font-size:13px; color:#555; text-decoration:none; }
         .user-dropdown a:hover { background:#f8f9fc; }
-
         #page-content { padding:1.5rem; flex:1; }
         .ta-card-section { background:#fff; border-radius:16px; border:1.5px solid #bfdbfe; box-shadow:0 2px 8px rgba(26,86,219,.07); overflow:hidden; }
         .ta-card-header { background:#fff; border-bottom:1.5px solid #bfdbfe; padding:1rem 1.25rem; display:flex; align-items:center; gap:10px; }
         .ta-section-title { font-family:'Playfair Display',serif; font-size:18px; color:#1a56db; margin:0; border-left:4px solid #1a56db; padding-left:12px; }
         .ta-card-body { padding:1.25rem; background:#fff; }
         .ta-badge { background:#eff6ff; border:1px solid #bfdbfe; color:#1a56db; border-radius:20px; padding:3px 12px; font-size:12px; font-weight:500; margin-left:auto; }
-
         #map { height:600px; width:100%; border-radius:12px; border:1.5px solid #bfdbfe; overflow:hidden; }
         .map-loading-overlay { height:600px; width:100%; border-radius:12px; border:1.5px solid #bfdbfe; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:#f8faff; color:#6b8ab8; font-size:14px; }
         .map-loading-overlay i { font-size:28px; color:#bfdbfe; animation:spin 1.2s linear infinite; }
         @keyframes spin { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
-
         .api-badge { position:fixed; bottom:14px; left:240px; z-index:999; padding:4px 10px; border-radius:20px; font-size:11px; font-weight:600; display:flex; align-items:center; gap:5px; }
         .api-badge.live     { background:#dcfce7; color:#166534; border:1px solid #86efac; }
         .api-badge.offline  { background:#fef9c3; color:#854d0e; border:1px solid #fde047; }
         .api-badge.checking { background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1; }
+        /* ✅ Hamburger button */
+        .hamburger-btn { display:none; background:none; border:none; cursor:pointer; font-size:20px; color:#4e73df; padding:4px 8px; align-items:center; justify-content:center; }
+        @media (max-width: 768px) { .hamburger-btn { display:flex !important; } }
       `}</style>
 
-      {/* API status badge */}
       <div className={`api-badge ${apiStatus}`}>
         <i className="fas fa-circle" style={{ fontSize: 7 }} />
         {apiStatus === "live"     && "API connected"}
@@ -606,11 +384,11 @@ export default function MapPage({
       </div>
 
       <div id="wrapper">
-        <Sidebar onNavigate={handleNavigate} />
+        {/* ✅ Sidebar with isMobileOpen */}
+        <Sidebar onNavigate={handleNavigate} isMobileOpen={isMobileOpen} />
 
         <div id="content-wrapper">
-
-          {/* ── Topbar (shared component, fetches its own profile) ── */}
+          {/* ✅ TopbarNav with onMenuToggle */}
           <TopbarNav
             searchQuery={searchQuery}
             onSearchChange={handleSearchInput}
@@ -620,44 +398,27 @@ export default function MapPage({
             username={propUsername}
             profilePhoto={propPhoto}
             onLogout={handleLogout}
+            onMenuToggle={() => setIsMobileOpen(o => !o)}
           />
 
-          {/* ── Page Content ── */}
           <div id="page-content">
             <div className="ta-card-section">
               <div className="ta-card-header">
                 <h6 className="ta-section-title">All Tourist Spots</h6>
-                <span className="ta-badge">
-                  <i className="fas fa-map-marker-alt" style={{ marginRight: 4 }} />
-                  {spotsTotal} spots
-                </span>
+                <span className="ta-badge"><i className="fas fa-map-marker-alt" style={{ marginRight: 4 }} />{spotsTotal} spots</span>
               </div>
               <div className="ta-card-body">
                 {loadingSpots
-                  ? (
-                    <div className="map-loading-overlay">
-                      <i className="fas fa-spinner" />
-                      <span>Loading spots…</span>
-                    </div>
-                  )
+                  ? <div className="map-loading-overlay"><i className="fas fa-spinner" /><span>Loading spots…</span></div>
                   : <div id="map" ref={mapRef} />
                 }
               </div>
             </div>
           </div>
-
         </div>
       </div>
-    </>
+    </AppLayout>
   );
 }
 
-// ─── Named exports ─────────────────────────────────────────────────────────────
-export {
-  apiGetSpots,
-  apiGetSpot,
-  apiGeocode,
-  apiGeocodeBatch,
-  apiSearch,
-  apiGetCategories,
-};
+export { apiGetSpots, apiGetSpot, apiGeocode, apiGeocodeBatch, apiSearch, apiGetCategories };

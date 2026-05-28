@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useHistory, useLocation, useParams } from "react-router-dom";
 import { CapacitorHttp } from "@capacitor/core";
 import { Capacitor } from "@capacitor/core";
+import AppLayout from "../components/AppLayout";
 
 // ─── API Base ────────────────────────────────────────────────────────────────
 const API_BASE = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_main";
@@ -68,7 +69,7 @@ export default function Edit({
   const history  = useHistory();
   const location = useLocation();
 
-  // ── Session / avatar — mirrors Users.tsx exactly ─────────────────────────
+  // ── Session / avatar ──────────────────────────────────────────────────────
   const savedPhoto    = localStorage.getItem("profile_photo");
   const savedUsername = localStorage.getItem("username") ?? propUsername;
 
@@ -82,7 +83,8 @@ export default function Edit({
     ? `${UPLOADS}${resolvedPhoto}`
     : AVATAR_URL(sessionUser.username || savedUsername);
 
-  const [userDropOpen, setUserDropOpen] = useState(false);
+  const [userDropOpen,  setUserDropOpen]  = useState(false);
+  const [isMobileOpen,  setIsMobileOpen]  = useState(false); // ← ADDED
   const [flash, setFlash] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
   // ── Stats ─────────────────────────────────────────────────────────────────
@@ -217,8 +219,11 @@ export default function Edit({
     }
   }
 
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <>
+    // ← ADDED: Wrap everything in AppLayout
+    <AppLayout isMobileOpen={isMobileOpen} onMobileToggle={() => setIsMobileOpen(o => !o)}>
+
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap');
@@ -259,13 +264,26 @@ export default function Edit({
           display:flex; align-items:center; padding:0 1.5rem; gap:1rem;
           position:sticky; top:0; z-index:99; flex-shrink:0;
         }
+
+        /* ← ADDED: Hamburger button — hidden on desktop, visible on mobile */
+        .hamburger-btn {
+          display:none;
+          background:none; border:none;
+          font-size:20px; cursor:pointer;
+          color:#4e73df; padding:4px 8px;
+          flex-shrink:0;
+        }
+        @media (max-width: 768px) {
+          .hamburger-btn { display:block; }
+          #content-wrapper { margin-left:0 !important; }
+        }
+
         .topbar-search { display:flex; }
         .topbar-search input { border:1px solid #d1d3e2; border-right:none; border-radius:5px 0 0 5px; padding:7px 14px; font-size:13px; font-family:'DM Sans',sans-serif; background:#f8f9fc; color:#333; width:240px; outline:none; }
         .topbar-search button { background:#4e73df; border:none; border-radius:0 5px 5px 0; padding:7px 14px; color:#fff; cursor:pointer; }
         .topbar-right { display:flex; align-items:center; gap:1rem; margin-left:auto; }
         .topbar-divider { border-left:1px solid #e3e6f0; height:36px; }
 
-        /* ── Avatar / user-area — same as Users.tsx ── */
         .user-area { display:flex; align-items:center; gap:8px; cursor:pointer; position:relative; user-select:none; }
         .user-area span { font-size:13px; font-weight:600; color:#333; }
         .user-area img { width:32px; height:32px; border-radius:50%; object-fit:cover; border:2px solid #bfdbfe; }
@@ -317,8 +335,8 @@ export default function Edit({
 
       <div id="wrapper">
 
-        {/* SIDEBAR */}
-        <div id="sidebar">
+        {/* SIDEBAR — ← ADDED: dynamic mobile-open class */}
+        <div id="sidebar" className={isMobileOpen ? "mobile-open" : ""}>
           <a className="sidebar-brand" href="#" onClick={(e) => { e.preventDefault(); history.push("/dashboard"); }}>
             <span className="sidebar-brand-icon"><i className="fas fa-laugh-wink"></i></span>
             <span className="sidebar-brand-text"><em><b>TOUR_</b></em>ISTA</span>
@@ -327,7 +345,11 @@ export default function Edit({
           <ul className="sidebar-nav">
             {NAV_ITEMS.map(({ icon, label, path }) => (
               <li key={label} className={location.pathname === path ? "active" : ""}>
-                <a href="#" onClick={(e) => { e.preventDefault(); history.push(path); }}>
+                <a href="#" onClick={(e) => {
+                  e.preventDefault();
+                  history.push(path);
+                  setIsMobileOpen(false); // ← ADDED: close sidebar on nav click (mobile)
+                }}>
                   <i className={`fas fa-fw ${icon}`}></i>
                   <span>{label}</span>
                 </a>
@@ -341,13 +363,22 @@ export default function Edit({
 
           {/* Topbar */}
           <div id="topbar">
+
+            {/* ← ADDED: Hamburger button (visible on mobile only via CSS) */}
+            <button
+              className="hamburger-btn"
+              onClick={() => setIsMobileOpen(o => !o)}
+              aria-label="Toggle sidebar"
+            >
+              <i className="fas fa-bars"></i>
+            </button>
+
             <div className="topbar-search">
               <input type="text" placeholder="Search for..." />
               <button><i className="fas fa-search fa-sm"></i></button>
             </div>
             <div className="topbar-right">
               <div className="topbar-divider" />
-              {/* ── User area — mirrors Users.tsx: localStorage + cleanPhoto + onError ── */}
               <div className="user-area" onClick={() => setUserDropOpen(o => !o)}>
                 <span>{sessionUser.username || savedUsername}</span>
                 <img
@@ -545,6 +576,7 @@ export default function Edit({
           </div>
         </div>
       </div>
-    </>
+
+    </AppLayout> // ← ADDED: closing tag
   );
 }

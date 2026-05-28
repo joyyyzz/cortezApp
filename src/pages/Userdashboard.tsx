@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useHistory } from "react-router-dom";
 import { CapacitorHttp } from "@capacitor/core";
 import { Capacitor } from "@capacitor/core";
+import { Geolocation } from "@capacitor/geolocation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CategoryInfo {
@@ -1076,27 +1077,30 @@ function NavModal({
     } catch {}
   }
 
-  function requestGPS() {
+  async function requestGPS() {
     S.gpsRequested = true;
-    if (!navigator.geolocation) {
-      setGpsChip({ state: "denied", text: "GPS not supported" });
-      S.userLocation = { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng };
-      return;
-    }
     setGpsChip({ state: "acquiring", text: "Getting your location…" });
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        S.userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        S.gpsReady     = true;
-        setGpsChip({ state: "got", text: "Location acquired" });
-        mapRef.current?.flyTo({ center: [S.userLocation.lng, S.userLocation.lat], zoom: 14, pitch: 45, speed: 1.2 });
-      },
-      () => {
-        S.userLocation = { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng };
-        setGpsChip({ state: "denied", text: "Location denied — using default area" });
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-    );
+
+    try {
+      const perm = await Geolocation.requestPermissions();
+      if (perm.location !== "granted") throw new Error("denied");
+
+      const pos = await Geolocation.getCurrentPosition({
+        enableHighAccuracy: true,
+        timeout: 10000,
+      });
+
+      S.userLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      S.gpsReady = true;
+      setGpsChip({ state: "got", text: "Location acquired" });
+      mapRef.current?.flyTo({
+        center: [S.userLocation.lng, S.userLocation.lat],
+        zoom: 14, pitch: 45, speed: 1.2,
+      });
+    } catch {
+      S.userLocation = { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng };
+      setGpsChip({ state: "denied", text: "Location denied — using default area" });
+    }
   }
 
   function beginNavigation() {
@@ -1111,13 +1115,13 @@ function NavModal({
     const origin = S.userLocation || DEFAULT_CENTER;
     placeUserMarker(origin.lng, origin.lat, 0);
     placeStartMarker(origin.lng, origin.lat);
-    if (navigator.geolocation) {
-      S.watchId = navigator.geolocation.watchPosition(
-        (pos) => { if (!S.isSimulating) onGPSUpdate(pos); },
-        (err) => console.warn("GPS watch:", err.message),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    }
+    Geolocation.watchPosition(
+      { enableHighAccuracy: true },
+      (pos, err) => {
+        if (err || !pos) return;
+        if (!S.isSimulating) onGPSUpdate(pos);
+      }
+    ).then((id) => { S.watchId = id; });
     mapRef.current?.flyTo({ center: [origin.lng, origin.lat], zoom: 16, pitch: 45, bearing: S.heading || 0, speed: 1.3 });
     fetchRoute(origin.lng, origin.lat, S.selectedDest.lng, S.selectedDest.lat);
   }
@@ -1157,7 +1161,7 @@ function NavModal({
   function navEnd() {
     stopSim();
     S.isNavigating = false;
-    if (S.watchId !== null) { navigator.geolocation.clearWatch(S.watchId); S.watchId = null; }
+    if (S.watchId !== null) { Geolocation.clearWatch({ id: S.watchId }); S.watchId = null; }
     [S.userMarker, S.destMarker, S.startMarker].forEach((m: any) => { if (m) m.remove(); });
     S.userMarker = S.destMarker = S.startMarker = null;
     const src = mapRef.current?.getSource("route");

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useHistory } from "react-router-dom";
 import { CapacitorHttp } from "@capacitor/core";
 import { Capacitor } from "@capacitor/core";
+import AppLayout from "../components/AppLayout";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BASE_URL = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php";
@@ -58,6 +59,9 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
 
   const history = useHistory();
 
+  // ── Sidebar mobile state ──
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+
   const [userInfo, setUserInfo]           = useState<UserInfo | null>(null);
   const [loading, setLoading]             = useState(true);
   const [editOpen, setEditOpen]           = useState(false);
@@ -71,7 +75,6 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
   const photoInputRef = useRef<HTMLInputElement>(null);
   const userAreaRef   = useRef<HTMLDivElement>(null);
 
-  // ✅ Fetch profile — CapacitorHttp sa mobile
   useEffect(() => {
     setLoading(true);
     const doFetch = async () => {
@@ -131,7 +134,6 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
     setToast({ message, isError });
   }
 
-  // ✅ Upload photo — regular fetch (FormData)
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -146,7 +148,6 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
     formData.append("profile_photo", file);
     formData.append("user_id", String(userInfo.user_id));
     setUploading(true);
-    // ✅ Regular fetch lang para sa FormData/file upload
     fetch(API.uploadPhoto, { method:"POST", body:formData })
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() as Promise<ApiResponse>; })
       .then(res => {
@@ -167,7 +168,6 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
       .finally(() => { setUploading(false); if (photoInputRef.current) photoInputRef.current.value = ""; });
   }
 
-  // ✅ Save profile — CapacitorHttp sa mobile
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!userInfo) return;
@@ -226,7 +226,7 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
   ];
 
   return (
-    <>
+    <AppLayout isMobileOpen={isMobileOpen} onMobileToggle={() => setIsMobileOpen(o => !o)}>
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap');
@@ -249,6 +249,11 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
         #content-wrapper::-webkit-scrollbar-thumb { background:#bfdbfe; border-radius:4px; }
         #content-wrapper::-webkit-scrollbar-thumb:hover { background:#93c5fd; }
         #topbar { height:65px; flex-shrink:0; background:#fff; box-shadow:0 2px 4px rgba(0,0,0,0.08); display:flex; align-items:center; padding:0 1.5rem; gap:1rem; position:sticky; top:0; z-index:99; }
+
+        /* ── Hamburger ── */
+        .hamburger-btn { display:none; background:none; border:none; cursor:pointer; padding:6px 8px; color:#4e73df; font-size:20px; border-radius:6px; line-height:1; flex-shrink:0; }
+        @media(max-width:768px) { .hamburger-btn { display:flex; align-items:center; justify-content:center; } }
+
         .topbar-search { display:flex; }
         .topbar-search input { border:1px solid #d1d3e2; border-right:none; border-radius:5px 0 0 5px; padding:7px 14px; font-size:13px; font-family:'DM Sans',sans-serif; background:#f8f9fc; color:#333; width:280px; outline:none; }
         .topbar-search button { background:#4e73df; border:none; border-radius:0 5px 5px 0; padding:7px 14px; color:#fff; cursor:pointer; }
@@ -291,12 +296,16 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
         .ta-btn-cancel { background:#fff; border:1.5px solid #bfdbfe; color:#1a56db; border-radius:8px; padding:9px 20px; font-size:13px; font-weight:500; cursor:pointer; font-family:'DM Sans',sans-serif; }
         .ta-btn-cancel:hover { background:#eff6ff; }
         .state-center { display:flex; align-items:center; justify-content:center; padding:3rem; gap:8px; color:#6b8ab8; font-size:14px; }
+
+        @media(max-width:768px){
+          .topbar-search input { width:140px; }
+        }
       `}</style>
 
       {toast && <Toast message={toast.message} isError={toast.isError} />}
 
       <div id="wrapper">
-        <div id="sidebar">
+        <div id="sidebar" className={isMobileOpen ? "mobile-open" : ""}>
           <a className="sidebar-brand" href="/dashboard">
             <span className="sidebar-brand-icon"><i className="fas fa-laugh-wink"></i></span>
             <span className="sidebar-brand-text"><em><b>TOUR_</b></em>ISTA</span>
@@ -305,7 +314,11 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
           <ul className="sidebar-nav">
             {NAV_ITEMS.map(({ icon, label, path }) => (
               <li key={label} className={path === "/profileadmin" ? "active" : ""}>
-                <a href="#" onClick={e => { e.preventDefault(); history.push(path); }}>
+                <a href="#" onClick={e => {
+                  e.preventDefault();
+                  setIsMobileOpen(false);
+                  history.push(path);
+                }}>
                   <i className={`fas fa-fw ${icon}`}></i>
                   <span>{label}</span>
                 </a>
@@ -316,6 +329,15 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
 
         <div id="content-wrapper">
           <div id="topbar">
+            {/* ── Hamburger ── */}
+            <button
+              className="hamburger-btn"
+              onClick={() => setIsMobileOpen(o => !o)}
+              aria-label="Toggle sidebar"
+            >
+              <i className={`fas ${isMobileOpen ? "fa-times" : "fa-bars"}`}></i>
+            </button>
+
             <div className="topbar-search">
               <input type="text" placeholder="Search for..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
               <button type="button"><i className="fas fa-search fa-sm"></i></button>
@@ -419,6 +441,6 @@ export default function ProfileAdmin({ userId: propUserId }: ProfileAdminProps) 
           </div>
         </div>
       </div>
-    </>
+    </AppLayout>
   );
 }

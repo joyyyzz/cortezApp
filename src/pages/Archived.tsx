@@ -2,15 +2,14 @@ import { useState, useEffect, useRef } from "react";
 import { useHistory } from "react-router-dom";
 import { CapacitorHttp } from "@capacitor/core";
 import { Capacitor } from "@capacitor/core";
+import AppLayout from "../components/AppLayout";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const BASE_UPLOADS         = "https://itservicesph.com/IT383/CORTEZ/Cortez/uploads/profile/";
 const BASE_SPOT_UPLOADS    = "https://itservicesph.com/IT383/CORTEZ/Cortez/uploads/";
-
 const API_BASE             = "https://itservicesph.com/IT383/CORTEZ/Cortez/index.php/API_archived";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
 interface APIResponse {
   status: string;
   total_users: number;
@@ -48,7 +47,6 @@ interface ArchivedProps {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function normaliseSpot(s: APISpot): ArchivedSpot {
   return {
     spot_id:    parseInt(s.spot_id, 10),
@@ -131,6 +129,9 @@ export default function Archived({
 }: ArchivedProps) {
 
   const history = useHistory();
+
+  // ── Sidebar mobile state ──
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
 
   const [spots, setSpots]                     = useState<ArchivedSpot[]>([]);
   const [loading, setLoading]                 = useState(true);
@@ -237,7 +238,7 @@ export default function Archived({
   ];
 
   return (
-    <>
+    <AppLayout isMobileOpen={isMobileOpen} onMobileToggle={() => setIsMobileOpen(o => !o)}>
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap');
@@ -252,7 +253,7 @@ export default function Archived({
           width:225px; min-width:225px;
           background:linear-gradient(180deg,#4e73df 10%,#224abe 100%);
           display:flex; flex-direction:column;
-          height:100vh; flex-shrink:0; z-index:100;
+          height:100vh; position:fixed; top:0; left:0; flex-shrink:0; z-index:100;
         }
         .sidebar-brand { display:flex; align-items:center; gap:10px; padding:1.25rem 1rem; color:#fff; text-decoration:none; }
         .sidebar-brand-icon { font-size:22px; transform:rotate(-15deg); display:inline-block; }
@@ -268,29 +269,27 @@ export default function Archived({
         .sidebar-nav li.active a { background:rgba(255,255,255,0.12); color:#fff; }
         .sidebar-nav li a i { width:18px; text-align:center; font-size:14px; }
 
-        /* ── Content wrapper: scrollable, blue scrollbar ── */
         #content-wrapper {
-          flex:1;
-          display:flex;
-          flex-direction:column;
-          height:100vh;
-          overflow-y:auto;
-          overflow-x:hidden;
-          scrollbar-width:thin;
-          scrollbar-color:#bfdbfe #f1f5f9;
+          flex:1; display:flex; flex-direction:column;
+          height:100vh; overflow-y:auto; overflow-x:hidden;
+          scrollbar-width:thin; scrollbar-color:#bfdbfe #f1f5f9;
         }
         #content-wrapper::-webkit-scrollbar { width:8px; }
         #content-wrapper::-webkit-scrollbar-track { background:#f1f5f9; }
         #content-wrapper::-webkit-scrollbar-thumb { background:#bfdbfe; border-radius:4px; }
         #content-wrapper::-webkit-scrollbar-thumb:hover { background:#93c5fd; }
 
-        /* ── Topbar: sticky ── */
         #topbar {
           height:65px; flex-shrink:0;
           background:#fff; box-shadow:0 2px 4px rgba(0,0,0,0.08);
           display:flex; align-items:center; padding:0 1.5rem; gap:1rem;
           position:sticky; top:0; z-index:99;
         }
+
+        /* ── Hamburger ── */
+        .hamburger-btn { display:none; background:none; border:none; cursor:pointer; padding:6px 8px; color:#4e73df; font-size:20px; border-radius:6px; line-height:1; flex-shrink:0; }
+        @media(max-width:768px) { .hamburger-btn { display:flex; align-items:center; justify-content:center; } }
+
         .topbar-search { display:flex; }
         .topbar-search input {
           border:1px solid #d1d3e2; border-right:none; border-radius:5px 0 0 5px;
@@ -311,7 +310,6 @@ export default function Archived({
         .user-dropdown a { display:flex; align-items:center; gap:8px; padding:10px 16px; font-size:13px; color:#555; text-decoration:none; }
         .user-dropdown a:hover { background:#f8f9fc; }
 
-        /* ── Page content ── */
         #page-content { flex:1; padding:1.5rem; }
 
         .ta-stat {
@@ -370,6 +368,10 @@ export default function Archived({
         .state-center { display:flex; align-items:center; justify-content:center; padding:3rem; gap:8px; color:#6b8ab8; font-size:14px; }
         .map-error { background:#fef2f2; border:1px solid #fca5a5; color:#b91c1c; border-radius:8px; padding:12px 16px; font-size:13px; }
         .no-img { color:#94a3b8; font-size:12px; }
+
+        @media(max-width:768px){
+          .topbar-search input { width:150px; }
+        }
       `}</style>
 
       {flash && <FlashAlert message={flash.message} type={flash.type} />}
@@ -384,7 +386,7 @@ export default function Archived({
       <div id="wrapper">
 
         {/* ── SIDEBAR ── */}
-        <div id="sidebar">
+        <div id="sidebar" className={isMobileOpen ? "mobile-open" : ""}>
           <a className="sidebar-brand" href="/dashboard">
             <span className="sidebar-brand-icon"><i className="fas fa-laugh-wink"></i></span>
             <span className="sidebar-brand-text"><em><b>TOUR_</b></em>ISTA</span>
@@ -393,7 +395,11 @@ export default function Archived({
           <ul className="sidebar-nav">
             {NAV_ITEMS.map(({ icon, label, path }) => (
               <li key={label} className={path === "/archived" ? "active" : ""}>
-                <a href="#" onClick={e => { e.preventDefault(); history.push(path); }}>
+                <a href="#" onClick={e => {
+                  e.preventDefault();
+                  setIsMobileOpen(false);
+                  history.push(path);
+                }}>
                   <i className={`fas fa-fw ${icon}`}></i>
                   <span>{label}</span>
                 </a>
@@ -407,6 +413,15 @@ export default function Archived({
 
           {/* Topbar */}
           <div id="topbar">
+            {/* ── Hamburger ── */}
+            <button
+              className="hamburger-btn"
+              onClick={() => setIsMobileOpen(o => !o)}
+              aria-label="Toggle sidebar"
+            >
+              <i className={`fas ${isMobileOpen ? "fa-times" : "fa-bars"}`}></i>
+            </button>
+
             <div className="topbar-search">
               <input
                 type="text"
@@ -549,6 +564,6 @@ export default function Archived({
           </div>
         </div>
       </div>
-    </>
+    </AppLayout>
   );
 }

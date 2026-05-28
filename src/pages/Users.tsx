@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useHistory } from "react-router-dom";
 import { CapacitorHttp } from "@capacitor/core";
-import { Capacitor } from "@capacitor/core";
+import AppLayout from "../components/AppLayout";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface UserInfo {
@@ -61,6 +61,9 @@ export default function Users({
 
   const history = useHistory();
 
+  // ── Sidebar mobile state ──
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+
   const savedPhoto    = localStorage.getItem("profile_photo");
   const savedUsername = localStorage.getItem("username") ?? propUsername;
 
@@ -79,7 +82,6 @@ export default function Users({
     ? `${UPLOADS}${resolvedPhoto}`
     : AVATAR_URL(sessionUser.username || savedUsername);
 
-  // ✅ Fixed fetch — gumagamit ng CapacitorHttp sa mobile
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -135,7 +137,7 @@ export default function Users({
   ];
 
   return (
-    <>
+    <AppLayout isMobileOpen={isMobileOpen} onMobileToggle={() => setIsMobileOpen(o => !o)}>
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap');
@@ -158,6 +160,11 @@ export default function Users({
         #content-wrapper::-webkit-scrollbar-thumb{background:#bfdbfe;border-radius:4px}
         #content-wrapper::-webkit-scrollbar-thumb:hover{background:#93c5fd}
         #topbar{height:65px;flex-shrink:0;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,0.08);display:flex;align-items:center;padding:0 1.5rem;gap:1rem;position:sticky;top:0;z-index:99}
+
+        /* ── Hamburger ── */
+        .hamburger-btn{display:none;background:none;border:none;cursor:pointer;padding:6px 8px;color:#4e73df;font-size:20px;border-radius:6px;line-height:1;flex-shrink:0}
+        @media(max-width:768px){.hamburger-btn{display:flex;align-items:center;justify-content:center}}
+
         .topbar-search{display:flex}
         .topbar-search input{border:1px solid #d1d3e2;border-right:none;border-radius:5px 0 0 5px;padding:7px 14px;font-size:13px;font-family:'DM Sans',sans-serif;background:#f8f9fc;color:#333;width:280px;outline:none}
         .topbar-search button{background:#4e73df;border:none;border-radius:0 5px 5px 0;padding:7px 14px;color:#fff;cursor:pointer}
@@ -198,10 +205,14 @@ export default function Users({
         .ta-empty i{font-size:48px;color:#bfdbfe;display:block;margin-bottom:1rem}
         .ta-empty p{font-size:14px;color:#94a3b8;margin:0}
         mark.ta-highlight{background:#fde68a;color:#1e3a8a;border-radius:3px;padding:0 2px}
+
+        @media(max-width:768px){
+          .topbar-search input{width:150px}
+        }
       `}</style>
 
       <div id="wrapper">
-        <div id="sidebar">
+        <div id="sidebar" className={isMobileOpen ? "mobile-open" : ""}>
           <a className="sidebar-brand" href="/dashboard">
             <span className="sidebar-brand-icon"><i className="fas fa-laugh-wink"></i></span>
             <span className="sidebar-brand-text"><em><b>TOUR_</b></em>ISTA</span>
@@ -210,7 +221,11 @@ export default function Users({
           <ul className="sidebar-nav">
             {NAV_ITEMS.map(({ icon, label, path }) => (
               <li key={label} className={path === "/users" ? "active" : ""}>
-                <a href="#" onClick={e => { e.preventDefault(); history.push(path); }}>
+                <a href="#" onClick={e => {
+                  e.preventDefault();
+                  setIsMobileOpen(false);
+                  history.push(path);
+                }}>
                   <i className={`fas fa-fw ${icon}`}></i>
                   <span>{label}</span>
                 </a>
@@ -221,6 +236,15 @@ export default function Users({
 
         <div id="content-wrapper">
           <div id="topbar">
+            {/* ── Hamburger ── */}
+            <button
+              className="hamburger-btn"
+              onClick={() => setIsMobileOpen(o => !o)}
+              aria-label="Toggle sidebar"
+            >
+              <i className={`fas ${isMobileOpen ? "fa-times" : "fa-bars"}`}></i>
+            </button>
+
             <div className="topbar-search">
               <input
                 type="text"
@@ -322,6 +346,6 @@ export default function Users({
           </div>
         </div>
       </div>
-    </>
+    </AppLayout>
   );
 }

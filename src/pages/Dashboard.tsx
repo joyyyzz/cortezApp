@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useHistory } from "react-router-dom";
+import AppLayout from "../components/AppLayout";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const BASE_UPLOADS = "https://itservicesph.com/IT383/CORTEZ/Cortez/uploads/profile/";
@@ -47,7 +48,6 @@ function getCategoryBadge(cat: CategoryInfo | string): string {
   return "badge-other";
 }
 
-// ✅ Helper para ma-extract ang filename lang mula sa buong URL o filename
 function cleanPhoto(p: string | null | undefined): string | null {
   if (!p) return null;
   return p.includes("http") ? p.split("/").pop() ?? null : p;
@@ -165,6 +165,9 @@ export default function Dashboard({
 
   const history = useHistory();
 
+  // ── Sidebar mobile state ──
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+
   // ── State ──
   const [spots, setSpots]               = useState<TouristSpot[]>([]);
   const [stats, setStats]               = useState<StatsData>({ total_users: 0, tourist_spots: 0 });
@@ -187,24 +190,19 @@ export default function Dashboard({
     "Park / Nature","Museum","Festival / Event","Other",
   ];
 
-  // ✅ Basahin ang localStorage para sa profile photo at username
   const savedPhoto    = localStorage.getItem("profile_photo");
   const savedUsername = localStorage.getItem("username") ?? username;
-
-  // ✅ Gamitin ang prop first, tapos localStorage fallback
   const resolvedPhoto = cleanPhoto(profile_photo) ?? cleanPhoto(savedPhoto);
 
   const avatarSrc = resolvedPhoto
     ? `${BASE_UPLOADS}${resolvedPhoto}`
     : `https://ui-avatars.com/api/?name=${encodeURIComponent(savedUsername)}&background=1a56db&color=fff`;
 
-  // ── Flash helper ──
   function showFlash(msg: string, type: FlashType = "success") {
     setFlash({ msg, type });
     setTimeout(() => setFlash(null), 3500);
   }
 
-  // ── Load stats ──
   const loadStats = useCallback(async () => {
     try {
       const s = await fetchStats();
@@ -214,7 +212,6 @@ export default function Dashboard({
     }
   }, []);
 
-  // ── Load spots ──
   const loadSpots = useCallback(async (search = "") => {
     setLoading(true);
     try {
@@ -227,12 +224,8 @@ export default function Dashboard({
     }
   }, []);
 
-  // ── Initial load ──
   useEffect(() => {
     const userId = localStorage.getItem("user_id");
-
-    // Fetch dashboard user info, passing user_id as fallback since CI session
-    // may not persist cross-origin between localhost and itservicesph.com
     apiFetch<any>(`/dashboard?user_id=${userId ?? ""}`)
       .then((r) => r.json())
       .then((data) => {
@@ -250,7 +243,6 @@ export default function Dashboard({
     loadSpots();
   }, [loadStats, loadSpots]);
 
-  // ── Search debounce ──
   useEffect(() => {
     const t = setTimeout(() => {
       setShowCount(4);
@@ -259,12 +251,10 @@ export default function Dashboard({
     return () => clearTimeout(t);
   }, [searchQuery, loadSpots]);
 
-  // ── Pagination ──
   const visible    = spots.slice(0, showCount);
   const canSeeMore = showCount < spots.length;
   const canMin     = showCount > 4;
 
-  // ── Archive ──
   async function handleArchive(id: number) {
     setArchiving(true);
     try {
@@ -280,7 +270,6 @@ export default function Dashboard({
     }
   }
 
-  // ── Add spot ──
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
@@ -315,7 +304,7 @@ export default function Dashboard({
   ];
 
   return (
-    <>
+    <AppLayout isMobileOpen={isMobileOpen} onMobileToggle={() => setIsMobileOpen(o => !o)}>
       <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600&family=DM+Sans:wght@400;500&display=swap');
@@ -369,6 +358,19 @@ export default function Dashboard({
           padding:0 1.5rem; gap:1rem;
           position:sticky; top:0; z-index:99;
         }
+
+        /* ── Hamburger button ── */
+        .hamburger-btn {
+          display:none;
+          background:none; border:none; cursor:pointer;
+          padding:6px 8px; color:#4e73df; font-size:20px;
+          border-radius:6px; line-height:1;
+          flex-shrink:0;
+        }
+        @media (max-width:768px) {
+          .hamburger-btn { display:flex; align-items:center; justify-content:center; }
+        }
+
         .topbar-search { display:flex; }
         .topbar-search input {
           border:1px solid #d1d3e2; border-right:none;
@@ -497,6 +499,13 @@ export default function Dashboard({
         .ta-form-control:focus { border-color:#1a56db; box-shadow:0 0 0 3px rgba(26,86,219,0.08); }
         .form-group { margin-bottom:14px; }
         .no-img { color:#94a3b8; font-size:11px; }
+
+        /* ── Mobile responsive tweaks ── */
+        @media (max-width:768px) {
+          .topbar-search input { width:160px; }
+          .main-grid { flex-direction:column; }
+          .col-form { width:100%; }
+        }
       `}</style>
 
       {flash && <Flash msg={flash.msg} type={flash.type} />}
@@ -513,7 +522,7 @@ export default function Dashboard({
       <div id="wrapper">
 
         {/* ── SIDEBAR ── */}
-        <div id="sidebar">
+        <div id="sidebar" className={isMobileOpen ? "mobile-open" : ""}>
           <a className="sidebar-brand" href="/dashboard">
             <span className="sidebar-brand-icon"><i className="fas fa-laugh-wink"></i></span>
             <span className="sidebar-brand-text"><em><b>TOUR_</b></em>ISTA</span>
@@ -522,7 +531,11 @@ export default function Dashboard({
           <ul className="sidebar-nav">
             {NAV_ITEMS.map(({ icon, label, path }) => (
               <li key={label} className={path === "/dashboard" ? "active" : ""}>
-                <a href="#" onClick={e => { e.preventDefault(); history.push(path); }}>
+                <a href="#" onClick={e => {
+                  e.preventDefault();
+                  setIsMobileOpen(false); // ← isara ang sidebar pag nag-navigate
+                  history.push(path);
+                }}>
                   <i className={`fas fa-fw ${icon}`}></i>
                   <span>{label}</span>
                 </a>
@@ -536,6 +549,15 @@ export default function Dashboard({
 
           {/* Topbar */}
           <div id="topbar">
+            {/* ── Hamburger ── */}
+            <button
+              className="hamburger-btn"
+              onClick={() => setIsMobileOpen(o => !o)}
+              aria-label="Toggle sidebar"
+            >
+              <i className={`fas ${isMobileOpen ? "fa-times" : "fa-bars"}`}></i>
+            </button>
+
             <div className="topbar-search">
               <input
                 type="text"
@@ -547,7 +569,6 @@ export default function Dashboard({
             </div>
             <div className="topbar-right">
               <div className="topbar-divider" />
-              {/* ✅ FIXED: gumagamit na ng localStorage para sa username at avatar */}
               <div className="user-area" onClick={() => setUserDropOpen(o => !o)}>
                 <span>{savedUsername}</span>
                 <img src={avatarSrc} alt="avatar" />
@@ -735,6 +756,6 @@ export default function Dashboard({
           </div>
         </div>
       </div>
-    </>
+    </AppLayout>
   );
 }

@@ -3,6 +3,7 @@ import { useHistory } from "react-router-dom";
 import { CapacitorHttp } from "@capacitor/core";
 import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
+import AppLayout from "../components/AppLayout";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface CategoryInfo {
@@ -123,12 +124,18 @@ function getBadgeClass(category: string): string {
 function Sidebar({
   activePath,
   onNavigate,
+  isOpen,
+  onClose,
 }: {
   activePath: string;
   onNavigate: (path: string) => void;
+  isOpen?: boolean;
+  onClose?: () => void;
 }) {
   return (
     <div
+      id="sidebar"
+      className={isOpen ? "mobile-open" : ""}
       style={{
         width: 225,
         minWidth: 225,
@@ -228,6 +235,7 @@ function Topbar({
   searchValue,
   onSearchChange,
   onSearchSubmit,
+  onHamburger,
 }: {
   username: string;
   profilePhoto?: string;
@@ -235,6 +243,7 @@ function Topbar({
   searchValue: string;
   onSearchChange: (v: string) => void;
   onSearchSubmit: () => void;
+  onHamburger?: () => void;
 }) {
   const [dropOpen, setDropOpen] = useState(false);
 
@@ -254,6 +263,20 @@ function Topbar({
         zIndex: 99,
       }}
     >
+      {/* ── Hamburger ── */}
+      {onHamburger && (
+        <button
+          className="hamburger-btn"
+          onClick={onHamburger}
+          style={{
+            background: "none", border: "none", cursor: "pointer",
+            padding: "6px 8px", color: "#4e73df", fontSize: 20,
+            borderRadius: 6, lineHeight: 1, flexShrink: 0,
+          }}
+        >
+          <i className="fas fa-bars" />
+        </button>
+      )}
       <div style={{ display: "flex" }}>
         <input
           type="text"
@@ -1527,6 +1550,7 @@ function CategoryPills({ active, onChange }: { active: Category; onChange: (c: C
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 export default function UserDashboard() {
   const history = useHistory();
+  const [isMobileOpen, setIsMobileOpen] = useState(false); // ← DAGDAG
 
   const [spots,      setSpots]      = useState<TouristSpot[]>([]);
   const [userInfo,   setUserInfo]   = useState<UserInfo>({ username: "" });
@@ -1675,8 +1699,14 @@ export default function UserDashboard() {
       <DescModal spot={descSpot} onClose={() => setDescSpot(null)} />
       <NavModal  spot={navSpot}  onClose={() => setNavSpot(null)}  />
 
+      <AppLayout isMobileOpen={isMobileOpen} onMobileToggle={() => setIsMobileOpen(o => !o)}>
       <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
-        <Sidebar activePath="/userdashboard" onNavigate={(path) => history.push(path)} />
+        <Sidebar
+          activePath="/userdashboard"
+          onNavigate={(path) => { setIsMobileOpen(false); history.push(path); }}
+          isOpen={isMobileOpen}
+          onClose={() => setIsMobileOpen(false)}
+        />
 
         <div className="content-wrapper" style={{
           marginLeft: 225, flex: 1,
@@ -1691,6 +1721,7 @@ export default function UserDashboard() {
             searchValue={searchQuery}
             onSearchChange={handleSearchChange}
             onSearchSubmit={handleSearchSubmit}
+            onHamburger={() => setIsMobileOpen(o => !o)}
           />
 
           <div style={{ padding: "1.5rem", flex: 1, fontFamily: "'DM Sans', sans-serif" }}>
@@ -1749,6 +1780,7 @@ export default function UserDashboard() {
           </div>
         </div>
       </div>
+      </AppLayout>
     </>
   );
 }
